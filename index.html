@@ -1,0 +1,429 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Content Marketing Agency</title>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      font-family: 'Segoe UI', sans-serif;
+      color: #1a1a2e;
+      background: #fff;
+      line-height: 1.6;
+    }
+
+    a { text-decoration: none; color: inherit; }
+
+    /* ── NAV ── */
+    nav {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 1rem 5%;
+      background: #fff;
+      box-shadow: 0 2px 8px rgba(0,0,0,.08);
+      position: sticky;
+      top: 0;
+      z-index: 100;
+    }
+    .logo { font-size: 1.4rem; font-weight: 700; color: #1a1a2e; }
+    .nav-links { display: flex; gap: 2rem; list-style: none; }
+    .nav-links a { font-weight: 500; transition: color .2s; }
+    .nav-links a:hover { color: #5e60ce; }
+    .btn {
+      padding: .55rem 1.3rem;
+      border-radius: 6px;
+      font-weight: 600;
+      cursor: pointer;
+      transition: background .2s, color .2s;
+    }
+    .btn-primary { background: #5e60ce; color: #fff; border: none; }
+    .btn-primary:hover { background: #4042a0; }
+    .btn-outline { background: transparent; color: #5e60ce; border: 2px solid #5e60ce; }
+    .btn-outline:hover { background: #5e60ce; color: #fff; }
+
+    /* ── HERO ── */
+    .hero {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      text-align: center;
+      padding: 6rem 5% 5rem;
+      background: linear-gradient(135deg, #f0f2ff 0%, #e8f4fd 100%);
+    }
+    .hero h1 {
+      font-size: clamp(2rem, 5vw, 3.2rem);
+      font-weight: 800;
+      max-width: 750px;
+      margin-bottom: 1.25rem;
+      color: #1a1a2e;
+    }
+    .hero p {
+      max-width: 600px;
+      font-size: 1.1rem;
+      color: #555;
+      margin-bottom: 2rem;
+    }
+
+    /* ── SECTION SHARED ── */
+    section { padding: 5rem 5%; }
+    .section-label {
+      text-transform: uppercase;
+      letter-spacing: .1em;
+      font-size: .8rem;
+      color: #5e60ce;
+      font-weight: 700;
+      margin-bottom: .5rem;
+    }
+    .section-title {
+      font-size: clamp(1.6rem, 3vw, 2.2rem);
+      font-weight: 800;
+      margin-bottom: 1rem;
+      color: #1a1a2e;
+    }
+    .section-subtitle { color: #666; max-width: 600px; margin-bottom: 3rem; }
+
+    /* ── ABOUT ── */
+    .about {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 4rem;
+      align-items: center;
+    }
+    .about img {
+      width: 100%;
+      border-radius: 16px;
+      aspect-ratio: 4/3;
+      object-fit: cover;
+      background: #ddd;
+    }
+    .about-placeholder {
+      width: 100%;
+      aspect-ratio: 4/3;
+      background: linear-gradient(135deg,#c9d6ff,#e2e2e2);
+      border-radius: 16px;
+    }
+
+    /* ── SERVICES ── */
+    .services-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+      gap: 1.5rem;
+    }
+    .card {
+      background: #f8f9ff;
+      border-radius: 14px;
+      padding: 2rem;
+      border: 1px solid #e8eaf6;
+      transition: transform .2s, box-shadow .2s;
+    }
+    .card:hover { transform: translateY(-4px); box-shadow: 0 8px 24px rgba(94,96,206,.15); }
+    .card-icon {
+      width: 48px; height: 48px;
+      background: #5e60ce;
+      border-radius: 10px;
+      display: flex; align-items: center; justify-content: center;
+      margin-bottom: 1rem;
+      font-size: 1.4rem;
+    }
+    .card h3 { font-size: 1.1rem; font-weight: 700; margin-bottom: .5rem; }
+    .card p { color: #666; font-size: .95rem; }
+
+    /* ── TESTIMONIALS ── */
+    .testimonials { background: #f8f9ff; }
+    .testimonials-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+      gap: 1.5rem;
+    }
+    .testimonial-card {
+      background: #fff;
+      border-radius: 14px;
+      padding: 1.8rem;
+      border: 1px solid #e8eaf6;
+      box-shadow: 0 2px 8px rgba(0,0,0,.05);
+    }
+    .stars { color: #f4c430; font-size: 1.1rem; margin-bottom: .75rem; }
+    .testimonial-card p { color: #444; font-style: italic; margin-bottom: 1rem; }
+    .reviewer { display: flex; align-items: center; gap: .75rem; }
+    .avatar {
+      width: 42px; height: 42px;
+      background: linear-gradient(135deg,#5e60ce,#48cae4);
+      border-radius: 50%;
+    }
+    .reviewer-info strong { display: block; font-size: .95rem; }
+    .reviewer-info span { font-size: .8rem; color: #888; }
+
+    /* ── FAQ ── */
+    .faq-list { max-width: 720px; margin: 0 auto; }
+    details {
+      border-bottom: 1px solid #e8eaf6;
+      padding: 1.2rem 0;
+    }
+    details:first-of-type { border-top: 1px solid #e8eaf6; }
+    summary {
+      font-weight: 600;
+      font-size: 1.05rem;
+      cursor: pointer;
+      list-style: none;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+    summary::after { content: '+'; font-size: 1.3rem; color: #5e60ce; }
+    details[open] summary::after { content: '−'; }
+    details p { margin-top: .75rem; color: #555; font-size: .97rem; }
+
+    /* ── TEAM ── */
+    .team-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+      gap: 2rem;
+      text-align: center;
+    }
+    .team-card { }
+    .team-photo {
+      width: 120px; height: 120px;
+      border-radius: 50%;
+      background: linear-gradient(135deg,#c9d6ff,#48cae4);
+      margin: 0 auto 1rem;
+    }
+    .team-card h3 { font-weight: 700; margin-bottom: .25rem; }
+    .team-card span { color: #888; font-size: .9rem; }
+
+    /* ── CONTACT ── */
+    .contact { background: #f8f9ff; }
+    .contact-inner {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 3rem;
+      align-items: start;
+    }
+    .contact-info h3 { font-size: 1.5rem; font-weight: 700; margin-bottom: 1.25rem; }
+    .contact-detail {
+      display: flex;
+      gap: .75rem;
+      margin-bottom: 1rem;
+      color: #555;
+    }
+    .contact-detail .icon { font-size: 1.2rem; }
+    .map-placeholder {
+      width: 100%;
+      height: 280px;
+      background: linear-gradient(135deg,#c9d6ff,#e2e2e2);
+      border-radius: 14px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      color: #888;
+      font-size: .9rem;
+    }
+
+    /* ── FOOTER ── */
+    footer {
+      background: #1a1a2e;
+      color: #ccc;
+      text-align: center;
+      padding: 2.5rem 5%;
+    }
+    .footer-socials {
+      display: flex;
+      justify-content: center;
+      gap: 1.25rem;
+      margin-bottom: 1rem;
+    }
+    .footer-socials a {
+      width: 38px; height: 38px;
+      border-radius: 50%;
+      background: rgba(255,255,255,.1);
+      display: flex; align-items: center; justify-content: center;
+      transition: background .2s;
+      font-size: 1rem;
+    }
+    .footer-socials a:hover { background: #5e60ce; }
+    footer p { font-size: .85rem; color: #888; }
+
+    /* ── RESPONSIVE ── */
+    @media (max-width: 768px) {
+      .about, .contact-inner { grid-template-columns: 1fr; }
+      .nav-links { display: none; }
+    }
+  </style>
+</head>
+<body>
+
+<!-- NAV -->
+<nav>
+  <div class="logo">ContentPro</div>
+  <ul class="nav-links">
+    <li><a href="#about">About</a></li>
+    <li><a href="#services">Services</a></li>
+    <li><a href="#team">Team</a></li>
+    <li><a href="#contact">Contact</a></li>
+  </ul>
+  <a href="#contact" class="btn btn-primary">Schedule an Appointment</a>
+</nav>
+
+<!-- HERO -->
+<section class="hero">
+  <h1>Data-Driven Insights for Targeted Content Success</h1>
+  <p>We combine storytelling with strategy to help brands create content that connects, converts, and lasts.</p>
+  <a href="#contact" class="btn btn-primary">Request a Consultation</a>
+</section>
+
+<!-- ABOUT -->
+<section id="about">
+  <div class="about">
+    <div>
+      <div class="section-label">Who We Are</div>
+      <h2 class="section-title">Storytellers &amp; Strategists</h2>
+      <p class="section-subtitle">We are a content marketing agency dedicated to helping brands achieve digital success through content-driven strategies. Our team of storytellers and strategists work hand-in-hand with you to craft meaningful, measurable campaigns.</p>
+      <a href="#contact" class="btn btn-outline">Get in Touch</a>
+    </div>
+    <div class="about-placeholder"></div>
+  </div>
+</section>
+
+<!-- SERVICES -->
+<section id="services" style="background:#f8f9ff">
+  <div class="section-label" style="text-align:center">What We Do</div>
+  <h2 class="section-title" style="text-align:center;margin:0 auto .75rem">Our Services</h2>
+  <p class="section-subtitle" style="text-align:center;margin:0 auto 3rem">From interactive experiences to accessibility audits, we cover every angle of modern content marketing.</p>
+  <div class="services-grid">
+    <div class="card">
+      <div class="card-icon">🎮</div>
+      <h3>Interactive Content Creation</h3>
+      <p>Quizzes, webinars, and gamified experiences that captivate your audience and drive engagement.</p>
+    </div>
+    <div class="card">
+      <div class="card-icon">♿</div>
+      <h3>Content Accessibility Audits</h3>
+      <p>Ensuring all your digital assets are inclusive and accessible to every user, regardless of ability.</p>
+    </div>
+    <div class="card">
+      <div class="card-icon">♻️</div>
+      <h3>Content Repurposing &amp; Revitalization</h3>
+      <p>Breathing new life into existing content to maximize ROI and reach new audiences.</p>
+    </div>
+    <div class="card">
+      <div class="card-icon">🎯</div>
+      <h3>Personalized Content Experiences</h3>
+      <p>Tailored content strategies that speak directly to your audience segments and drive conversions.</p>
+    </div>
+  </div>
+</section>
+
+<!-- TESTIMONIALS -->
+<section class="testimonials">
+  <div class="section-label" style="text-align:center">What Clients Say</div>
+  <h2 class="section-title" style="text-align:center;margin:0 auto .75rem">Testimonials</h2>
+  <p class="section-subtitle" style="text-align:center;margin:0 auto 3rem">Don't take our word for it — hear from the people we've worked with.</p>
+  <div class="testimonials-grid">
+    <div class="testimonial-card">
+      <div class="stars">★★★★★</div>
+      <p>"Working with ContentPro transformed our online presence. Their data-driven approach helped us reach the right audience at the right time."</p>
+      <div class="reviewer">
+        <div class="avatar"></div>
+        <div class="reviewer-info">
+          <strong>Jane Doe</strong>
+          <span>CEO, Acme Corp</span>
+        </div>
+      </div>
+    </div>
+    <div class="testimonial-card">
+      <div class="stars">★★★★★</div>
+      <p>"The interactive content they created for us boosted engagement by 300%. Truly a game-changer for our brand."</p>
+      <div class="reviewer">
+        <div class="avatar"></div>
+        <div class="reviewer-info">
+          <strong>Jane Doe</strong>
+          <span>Marketing Director, Globex</span>
+        </div>
+      </div>
+    </div>
+    <div class="testimonial-card">
+      <div class="stars">★★★★★</div>
+      <p>"Their content accessibility audit revealed issues we never knew existed. Now our site serves every visitor equally."</p>
+      <div class="reviewer">
+        <div class="avatar"></div>
+        <div class="reviewer-info">
+          <strong>Jane Doe</strong>
+          <span>Founder, Initech</span>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- FAQ -->
+<section id="faq">
+  <div class="section-label" style="text-align:center">Got Questions?</div>
+  <h2 class="section-title" style="text-align:center;margin:0 auto 2.5rem">Frequently Asked Questions</h2>
+  <div class="faq-list">
+    <details>
+      <summary>How is content marketing different from traditional marketing?</summary>
+      <p>Content marketing focuses on creating valuable, relevant content to attract and retain a clearly defined audience, whereas traditional marketing interrupts the audience with promotional messages. Content marketing builds trust over time and generates organic growth.</p>
+    </details>
+    <details>
+      <summary>How do you measure the success of a content marketing campaign?</summary>
+      <p>We track key metrics including organic traffic, lead generation, conversion rates, engagement rates, and ROI. We provide regular reports so you always know exactly how your campaigns are performing.</p>
+    </details>
+    <details>
+      <summary>How long does it take to develop a content strategy?</summary>
+      <p>A comprehensive content strategy typically takes 2–4 weeks to develop. This includes audience research, competitor analysis, content auditing, and goal alignment. From there, we move quickly into execution.</p>
+    </details>
+  </div>
+</section>
+
+<!-- TEAM -->
+<section id="team" style="background:#f8f9ff">
+  <div class="section-label" style="text-align:center">Meet the Team</div>
+  <h2 class="section-title" style="text-align:center;margin:0 auto 3rem">The People Behind the Work</h2>
+  <div class="team-grid">
+    <div class="team-card">
+      <div class="team-photo"></div>
+      <h3>John Doe</h3>
+      <span>Creative Director</span>
+    </div>
+    <div class="team-card">
+      <div class="team-photo"></div>
+      <h3>John Doe</h3>
+      <span>Content Strategist</span>
+    </div>
+    <div class="team-card">
+      <div class="team-photo"></div>
+      <h3>John Doe</h3>
+      <span>SEO &amp; Analytics Lead</span>
+    </div>
+  </div>
+</section>
+
+<!-- CONTACT -->
+<section id="contact" class="contact">
+  <div class="contact-inner">
+    <div class="contact-info">
+      <div class="section-label">Reach Out</div>
+      <h2 class="section-title">Get In Touch</h2>
+      <div class="contact-detail"><span class="icon">📍</span><span>6 Cardinal Way, Suite 900<br>New York, NY</span></div>
+      <div class="contact-detail"><span class="icon">✉️</span><span>hello@contentpro.com</span></div>
+      <div class="contact-detail"><span class="icon">🕐</span><span>Mon – Sat: 9:00 AM – 8:00 PM</span></div>
+    </div>
+    <div class="map-placeholder">📍 Google Map Embed Here</div>
+  </div>
+</section>
+
+<!-- FOOTER -->
+<footer>
+  <div class="footer-socials">
+    <a href="#" aria-label="Facebook">f</a>
+    <a href="#" aria-label="Twitter">𝕏</a>
+    <a href="#" aria-label="Instagram">📷</a>
+    <a href="#" aria-label="LinkedIn">in</a>
+  </div>
+  <p>&copy; 2024 ContentPro. All rights reserved.</p>
+</footer>
+
+</body>
+</html>
