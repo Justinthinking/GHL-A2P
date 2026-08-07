@@ -159,6 +159,30 @@ return [{
   },
 }];`;
 
+const BASEROW_TABLE_ID = '764';
+const GHL_LOCATION_ID = 'fPnzZjzdvxzEGdkhdQ0e';
+const GHL_PIPELINE_ID = 'MXHfKwSzSiKSSDfkajSO';
+
+const RESOLVE_STAGE_JS = `const PIPELINE_ID = '${GHL_PIPELINE_ID}';
+const STAGE_NAME_PATTERN = /pre[\\s_-]*loi/i;
+
+const pipelines = $input.first().json.pipelines || [];
+const pipeline = pipelines.find((p) => p.id === PIPELINE_ID);
+if (!pipeline) {
+  throw new Error('GHL pipeline ' + PIPELINE_ID + ' not found for this location');
+}
+
+const stages = pipeline.stages || [];
+const stage = stages.find((s) => STAGE_NAME_PATTERN.test(s.name || ''));
+if (!stage) {
+  throw new Error(
+    'No Pre-LOI stage in pipeline "' + pipeline.name + '". Stages present: ' +
+    stages.map((s) => s.name).join(', ')
+  );
+}
+
+return [{ json: { pipeline_id: pipeline.id, stage_id: stage.id, stage_name: stage.name } }];`;
+
 const sampleRow = {
   id: 42,
   ghl_contact_id: 'ghl-contact-123',
@@ -197,7 +221,7 @@ const getWorksheetRow = node({
     name: 'Get Worksheet Row',
     parameters: {
       method: 'GET',
-      url: expr('https://baserow.dfn8n.xyz/api/database/rows/table/REPLACE_BASEROW_TABLE_ID/{{ $json.body.items[0].id }}/?user_field_names=true'),
+      url: expr('https://baserow.dfn8n.xyz/api/database/rows/table/' + BASEROW_TABLE_ID + '/{{ $json.body.items[0].id }}/?user_field_names=true'),
       authentication: 'genericCredentialType',
       genericAuthType: 'httpHeaderAuth',
       options: {},
@@ -392,7 +416,7 @@ const baserowWriteback = node({
     name: 'Baserow: Write Audit + Underwritten',
     parameters: {
       method: 'PATCH',
-      url: expr("https://baserow.dfn8n.xyz/api/database/rows/table/REPLACE_BASEROW_TABLE_ID/{{ $('Underwrite').item.json.row_id }}/?user_field_names=true"),
+      url: expr("https://baserow.dfn8n.xyz/api/database/rows/table/" + BASEROW_TABLE_ID + "/{{ $('Underwrite').item.json.row_id }}/?user_field_names=true"),
       authentication: 'genericCredentialType',
       genericAuthType: 'httpHeaderAuth',
       sendBody: true,
@@ -409,6 +433,42 @@ const baserowWriteback = node({
   output: [{ id: 42, status: { value: 'Underwritten' } }],
 });
 
+const ghlFetchPipelines = node({
+  type: 'n8n-nodes-base.httpRequest',
+  version: 4.4,
+  config: {
+    name: 'GHL: Fetch Pipeline Stages',
+    parameters: {
+      method: 'GET',
+      url: 'https://services.leadconnectorhq.com/opportunities/pipelines',
+      authentication: 'genericCredentialType',
+      genericAuthType: 'httpHeaderAuth',
+      sendHeaders: true,
+      headerParameters: { parameters: [{ name: 'Version', value: '2021-07-28' }] },
+      sendQuery: true,
+      queryParameters: { parameters: [{ name: 'locationId', value: GHL_LOCATION_ID }] },
+      options: {},
+    },
+    credentials: { httpHeaderAuth: newCredential('GHL API (LeadConnector)') },
+    retryOnFail: true,
+    maxTries: 5,
+    waitBetweenTries: 5000,
+    position: [976, -96],
+  },
+  output: [{ pipelines: [{ id: 'MXHfKwSzSiKSSDfkajSO', name: 'Wholesale', stages: [{ id: 'stage-1', name: 'Pre-LOI Ready' }] }] }],
+});
+
+const resolvePreLoiStage = node({
+  type: 'n8n-nodes-base.code',
+  version: 2,
+  config: {
+    name: 'Resolve Pre-LOI Stage',
+    parameters: { mode: 'runOnceForAllItems', language: 'javaScript', jsCode: RESOLVE_STAGE_JS },
+    position: [1200, -96],
+  },
+  output: [{ pipeline_id: 'MXHfKwSzSiKSSDfkajSO', stage_id: 'stage-1', stage_name: 'Pre-LOI Ready' }],
+});
+
 const ghlUpdateStage = node({
   type: 'n8n-nodes-base.httpRequest',
   version: 4.4,
@@ -423,14 +483,14 @@ const ghlUpdateStage = node({
       headerParameters: { parameters: [{ name: 'Version', value: '2021-07-28' }] },
       sendBody: true,
       specifyBody: 'json',
-      jsonBody: '{"pipelineId":"REPLACE_GHL_PIPELINE_ID","pipelineStageId":"REPLACE_GHL_STAGE_PRELOI_READY_ID"}',
+      jsonBody: expr('{{ JSON.stringify({ pipelineId: $json.pipeline_id, pipelineStageId: $json.stage_id }) }}'),
       options: {},
     },
     credentials: { httpHeaderAuth: newCredential('GHL API (LeadConnector)') },
     retryOnFail: true,
     maxTries: 5,
     waitBetweenTries: 5000,
-    position: [976, -96],
+    position: [1424, -96],
   },
   output: [{ succeeded: true }],
 });
@@ -448,7 +508,7 @@ const telegramTeamSummary = node({
       additionalFields: { appendAttribution: false },
     },
     credentials: { telegramApi: newCredential('Jarvis772 Telegram Bot') },
-    position: [1200, -96],
+    position: [1648, -96],
   },
   output: [{ ok: true, result: { message_id: 1002 } }],
 });
@@ -457,11 +517,13 @@ const overviewSticky = sticky(
   '## WF-OFFER-ENGINE-SFR\n' +
   'Baserow worksheet (status=Ready) → deterministic MAO → GHL + Baserow writeback → Telegram.\n\n' +
   '**Code computes the offer. No LLM anywhere in this workflow.**\n\n' +
-  'Setup (see repo docs/setup-notes.md):\n' +
-  '1. Replace REPLACE_BASEROW_TABLE_ID in both Baserow HTTP nodes.\n' +
-  '2. Replace REPLACE_GHL_PIPELINE_ID / REPLACE_GHL_STAGE_PRELOI_READY_ID in the stage node.\n' +
-  '3. Wire credentials: Baserow token, GHL bearer, Telegram bot. Set both chat IDs.\n' +
-  '4. Create the Baserow webhook (rows.updated, user field names ON) → this workflow URL.\n\n' +
+  'Wired: Baserow table 764 | GHL location fPnzZjzdvxzEGdkhdQ0e | pipeline MXHfKwSzSiKSSDfkajSO.\n' +
+  'The Pre-LOI stage ID is resolved by name at run time, so no stage ID to paste.\n\n' +
+  'Still to do (see repo docs/setup-notes.md):\n' +
+  '1. Set the chat ID on both Telegram nodes.\n' +
+  '2. Wire credentials: Baserow database token + GHL bearer (HTTP Header Auth).\n' +
+  '3. Fix the Baserow webhook: method POST, event "Rows are updated",\n' +
+  '   URL https://dfn8n.xyz/webhook/offer-engine-sfr\n\n' +
   'seller_draft is written to a review field — NEVER auto-sent to the seller.',
   [baserowWebhook, getWorksheetRow],
 );
@@ -475,7 +537,9 @@ export default workflow('wf-offer-engine-sfr', 'WF-OFFER-ENGINE-SFR')
         .to(ghlUpdateOpportunity
           .to(ghlCreateNote
             .to(baserowWriteback
-              .to(ghlUpdateStage
-                .to(telegramTeamSummary))))))
+              .to(ghlFetchPipelines
+                .to(resolvePreLoiStage
+                  .to(ghlUpdateStage
+                    .to(telegramTeamSummary))))))))
       .onFalse(telegramHaltAlert)))
   .add(overviewSticky);
