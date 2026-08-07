@@ -1,4 +1,4 @@
-import { workflow, node, trigger, sticky, newCredential, ifElse, expr, placeholder } from '@n8n/workflow-sdk';
+import { workflow, node, trigger, sticky, newCredential, ifElse, expr } from '@n8n/workflow-sdk';
 
 const UNDERWRITE_JS = `// ==== SYNC-START (mirror of src/underwrite.mjs — keep in sync) ====
 const ASSIGNMENT_FEE = 10000;
@@ -162,6 +162,7 @@ return [{
 const BASEROW_TABLE_ID = '764';
 const GHL_LOCATION_ID = 'fPnzZjzdvxzEGdkhdQ0e';
 const GHL_PIPELINE_ID = 'MXHfKwSzSiKSSDfkajSO';
+const TELEGRAM_CHAT_ID = '6707585706';
 
 const RESOLVE_STAGE_JS = `const PIPELINE_ID = '${GHL_PIPELINE_ID}';
 const STAGE_NAME_PATTERN = /pre[\\s_-]*loi/i;
@@ -182,6 +183,11 @@ if (!stage) {
 }
 
 return [{ json: { pipeline_id: pipeline.id, stage_id: stage.id, stage_name: stage.name } }];`;
+
+const AUDIT_ROW_JS = `// Emit only the Baserow audit fields so the Baserow node can auto-map
+// input keys to columns by name. Any extra key here would be sent as a
+// column that does not exist and fail the update.
+return [{ json: $('Underwrite').first().json.baserow_update }];`;
 
 const sampleRow = {
   id: 42,
@@ -211,22 +217,22 @@ const baserowWebhook = trigger({
     },
     position: [-816, 0],
   },
-  output: [{ body: { table_id: 100, event_type: 'rows.updated', items: [{ id: 42 }] } }],
+  output: [{ body: { table_id: 764, event_type: 'rows.updated', items: [{ id: 42 }] } }],
 });
 
 const getWorksheetRow = node({
-  type: 'n8n-nodes-base.httpRequest',
-  version: 4.4,
+  type: 'n8n-nodes-base.baserow',
+  version: 1.1,
   config: {
     name: 'Get Worksheet Row',
     parameters: {
-      method: 'GET',
-      url: expr('https://baserow.dfn8n.xyz/api/database/rows/table/' + BASEROW_TABLE_ID + '/{{ $json.body.items[0].id }}/?user_field_names=true'),
-      authentication: 'genericCredentialType',
-      genericAuthType: 'httpHeaderAuth',
-      options: {},
+      resource: 'row',
+      operation: 'get',
+      authentication: 'databaseToken',
+      tableId: BASEROW_TABLE_ID,
+      rowId: expr('{{ $json.body.items[0].id }}'),
     },
-    credentials: { httpHeaderAuth: newCredential('Baserow Database Token') },
+    credentials: { baserowTokenApi: newCredential('Baserow Token API') },
     retryOnFail: true,
     maxTries: 3,
     waitBetweenTries: 2000,
@@ -307,7 +313,7 @@ const telegramHaltAlert = node({
     parameters: {
       resource: 'message',
       operation: 'sendMessage',
-      chatId: placeholder('Team Telegram chat ID (ask @get_id_bot)'),
+      chatId: TELEGRAM_CHAT_ID,
       text: expr(
         '⛔ OFFER ENGINE HALT — worksheet row {{ $json.id }}\n' +
         'Address: {{ $json.property_address || "(none)" }}\n' +
@@ -317,7 +323,7 @@ const telegramHaltAlert = node({
       ),
       additionalFields: { appendAttribution: false },
     },
-    credentials: { telegramApi: newCredential('Jarvis772 Telegram Bot') },
+    credentials: { telegramApi: newCredential('STL Offer Bot') },
     position: [80, 208],
   },
   output: [{ ok: true, result: { message_id: 1001 } }],
@@ -374,7 +380,7 @@ const ghlUpdateOpportunity = node({
       jsonBody: expr('{{ JSON.stringify({ customFields: $json.ghl_custom_fields }) }}'),
       options: {},
     },
-    credentials: { httpHeaderAuth: newCredential('GHL API (LeadConnector)') },
+    credentials: { httpHeaderAuth: newCredential('GHL Bearer') },
     retryOnFail: true,
     maxTries: 5,
     waitBetweenTries: 5000,
@@ -400,7 +406,7 @@ const ghlCreateNote = node({
       jsonBody: expr("{{ JSON.stringify({ body: $('Underwrite').item.json.offer_note }) }}"),
       options: {},
     },
-    credentials: { httpHeaderAuth: newCredential('GHL API (LeadConnector)') },
+    credentials: { httpHeaderAuth: newCredential('GHL Bearer') },
     retryOnFail: true,
     maxTries: 5,
     waitBetweenTries: 5000,
@@ -409,26 +415,48 @@ const ghlCreateNote = node({
   output: [{ id: 'note-1' }],
 });
 
+const buildAuditRow = node({
+  type: 'n8n-nodes-base.code',
+  version: 2,
+  config: {
+    name: 'Build Baserow Audit Row',
+    parameters: { mode: 'runOnceForAllItems', language: 'javaScript', jsCode: AUDIT_ROW_JS },
+    position: [752, -96],
+  },
+  output: [{
+    arv_minus_repairs: 150000,
+    factor_used: 0.78,
+    new_mao: 107000,
+    uw_spread: 12000,
+    uw_ratio: 0.5278,
+    jv_opportunity_value: null,
+    uw_reason: 'NEW MAO $107,000 = ...',
+    offer_note: 'OFFER — 456 Mid Ave ...',
+    seller_draft: 'Hey Marie — ran your numbers ...',
+    computed_at: '2026-08-07T12:00:00.000Z',
+    status: 'Underwritten',
+  }],
+});
+
 const baserowWriteback = node({
-  type: 'n8n-nodes-base.httpRequest',
-  version: 4.4,
+  type: 'n8n-nodes-base.baserow',
+  version: 1.1,
   config: {
     name: 'Baserow: Write Audit + Underwritten',
     parameters: {
-      method: 'PATCH',
-      url: expr("https://baserow.dfn8n.xyz/api/database/rows/table/" + BASEROW_TABLE_ID + "/{{ $('Underwrite').item.json.row_id }}/?user_field_names=true"),
-      authentication: 'genericCredentialType',
-      genericAuthType: 'httpHeaderAuth',
-      sendBody: true,
-      specifyBody: 'json',
-      jsonBody: expr("{{ JSON.stringify($('Underwrite').item.json.baserow_update) }}"),
-      options: {},
+      resource: 'row',
+      operation: 'update',
+      authentication: 'databaseToken',
+      tableId: BASEROW_TABLE_ID,
+      rowId: expr("{{ $('Underwrite').item.json.row_id }}"),
+      dataToSend: 'autoMapInputData',
+      inputsToIgnore: '',
     },
-    credentials: { httpHeaderAuth: newCredential('Baserow Database Token') },
+    credentials: { baserowTokenApi: newCredential('Baserow Token API') },
     retryOnFail: true,
     maxTries: 3,
     waitBetweenTries: 2000,
-    position: [752, -96],
+    position: [976, -96],
   },
   output: [{ id: 42, status: { value: 'Underwritten' } }],
 });
@@ -449,11 +477,11 @@ const ghlFetchPipelines = node({
       queryParameters: { parameters: [{ name: 'locationId', value: GHL_LOCATION_ID }] },
       options: {},
     },
-    credentials: { httpHeaderAuth: newCredential('GHL API (LeadConnector)') },
+    credentials: { httpHeaderAuth: newCredential('GHL Bearer') },
     retryOnFail: true,
     maxTries: 5,
     waitBetweenTries: 5000,
-    position: [976, -96],
+    position: [1200, -96],
   },
   output: [{ pipelines: [{ id: 'MXHfKwSzSiKSSDfkajSO', name: 'Wholesale', stages: [{ id: 'stage-1', name: 'Pre-LOI Ready' }] }] }],
 });
@@ -464,7 +492,7 @@ const resolvePreLoiStage = node({
   config: {
     name: 'Resolve Pre-LOI Stage',
     parameters: { mode: 'runOnceForAllItems', language: 'javaScript', jsCode: RESOLVE_STAGE_JS },
-    position: [1200, -96],
+    position: [1424, -96],
   },
   output: [{ pipeline_id: 'MXHfKwSzSiKSSDfkajSO', stage_id: 'stage-1', stage_name: 'Pre-LOI Ready' }],
 });
@@ -486,11 +514,11 @@ const ghlUpdateStage = node({
       jsonBody: expr('{{ JSON.stringify({ pipelineId: $json.pipeline_id, pipelineStageId: $json.stage_id }) }}'),
       options: {},
     },
-    credentials: { httpHeaderAuth: newCredential('GHL API (LeadConnector)') },
+    credentials: { httpHeaderAuth: newCredential('GHL Bearer') },
     retryOnFail: true,
     maxTries: 5,
     waitBetweenTries: 5000,
-    position: [1424, -96],
+    position: [1648, -96],
   },
   output: [{ succeeded: true }],
 });
@@ -503,12 +531,12 @@ const telegramTeamSummary = node({
     parameters: {
       resource: 'message',
       operation: 'sendMessage',
-      chatId: placeholder('Team Telegram chat ID (ask @get_id_bot)'),
+      chatId: TELEGRAM_CHAT_ID,
       text: expr("{{ $('Underwrite').item.json.telegram_summary }}"),
       additionalFields: { appendAttribution: false },
     },
-    credentials: { telegramApi: newCredential('Jarvis772 Telegram Bot') },
-    position: [1648, -96],
+    credentials: { telegramApi: newCredential('STL Offer Bot') },
+    position: [1872, -96],
   },
   output: [{ ok: true, result: { message_id: 1002 } }],
 });
@@ -517,12 +545,11 @@ const overviewSticky = sticky(
   '## WF-OFFER-ENGINE-SFR\n' +
   'Baserow worksheet (status=Ready) → deterministic MAO → GHL + Baserow writeback → Telegram.\n\n' +
   '**Code computes the offer. No LLM anywhere in this workflow.**\n\n' +
-  'Wired: Baserow table 764 | GHL location fPnzZjzdvxzEGdkhdQ0e | pipeline MXHfKwSzSiKSSDfkajSO.\n' +
-  'The Pre-LOI stage ID is resolved by name at run time, so no stage ID to paste.\n\n' +
+  'Wired: Baserow table 764 | GHL location fPnzZjzdvxzEGdkhdQ0e | pipeline MXHfKwSzSiKSSDfkajSO\n' +
+  'Telegram chat 6707585706 (@STL_Offer_bot). Pre-LOI stage resolved by name at run time.\n\n' +
   'Still to do (see repo docs/setup-notes.md):\n' +
-  '1. Set the chat ID on both Telegram nodes.\n' +
-  '2. Wire credentials: Baserow database token + GHL bearer (HTTP Header Auth).\n' +
-  '3. Fix the Baserow webhook: method POST, event "Rows are updated",\n' +
+  '1. Select the GHL Bearer header-auth credential on the four GHL HTTP nodes.\n' +
+  '2. Fix the Baserow webhook: method POST, event "Rows are updated",\n' +
   '   URL https://dfn8n.xyz/webhook/offer-engine-sfr\n\n' +
   'seller_draft is written to a review field — NEVER auto-sent to the seller.',
   [baserowWebhook, getWorksheetRow],
@@ -536,10 +563,11 @@ export default workflow('wf-offer-engine-sfr', 'WF-OFFER-ENGINE-SFR')
       .onTrue(underwriteCode
         .to(ghlUpdateOpportunity
           .to(ghlCreateNote
-            .to(baserowWriteback
-              .to(ghlFetchPipelines
-                .to(resolvePreLoiStage
-                  .to(ghlUpdateStage
-                    .to(telegramTeamSummary))))))))
+            .to(buildAuditRow
+              .to(baserowWriteback
+                .to(ghlFetchPipelines
+                  .to(resolvePreLoiStage
+                    .to(ghlUpdateStage
+                      .to(telegramTeamSummary)))))))))
       .onFalse(telegramHaltAlert)))
   .add(overviewSticky);

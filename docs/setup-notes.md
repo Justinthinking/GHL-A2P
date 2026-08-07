@@ -22,19 +22,38 @@ stage whose name matches `/pre[\s_-]*loi/i` — so "Pre-LOI Ready", "Pre LOI", a
 "pre_loi" all work. If the stage doesn't exist, the node throws a readable error listing
 the stages it did find, rather than silently writing a wrong stage.
 
-## 1b. Still to fill
+## 1b. Credentials — what's wired and what isn't
 
-| Placeholder | Where | What to put there |
-|---|---|---|
-| Telegram chat ID | Both Telegram nodes (shown as a placeholder field) | Team chat ID for @Jarvis772_bot (ask `@get_id_bot`) |
-
-## 2. Credentials to wire (n8n → each node's credential selector)
-
-| Credential | Type | Nodes | Contents |
+| Credential | Type | Nodes | Status |
 |---|---|---|---|
-| Baserow Database Token | HTTP Header Auth | Get Worksheet Row, Baserow: Write Audit + Underwritten | Header `Authorization`: `Token <your Baserow database token>` |
-| GHL API (LeadConnector) | HTTP Header Auth | All three GHL nodes | Header `Authorization`: `Bearer <GHL Private Integration / API key>` (the `Version: 2021-07-28` header is already on the nodes) |
-| Telegram account | Telegram API | Both Telegram nodes | Already auto-wired to your existing @Jarvis772_bot credential |
+| Baserow (host `https://baserow.dfn8n.xyz` + database token) | Baserow Token API | Get Worksheet Row, Baserow: Write Audit + Underwritten | ✅ auto-assigned — **verify it picked the right one**, see below |
+| GHL bearer (`Authorization: Bearer <key>`) | HTTP Header Auth | The four `GHL:` HTTP nodes | ⚠️ **must be selected by hand** |
+| Telegram bot | Telegram API | Both Telegram nodes | ✅ auto-assigned — **verify it's @STL_Offer_bot** |
+
+Chat ID `6707585706` is baked into both Telegram nodes.
+
+**Two things to check by eye when you open the workflow:**
+
+1. n8n auto-assigned the Baserow credential named **"SQL Baserow"** because it was the
+   first `baserowTokenApi` credential in the account. If the credential you created for
+   this build is a different one, switch both Baserow nodes to it — a wrong host or a
+   token scoped to another database fails at run time.
+2. The Telegram nodes got the credential named **"Telegram account"**. Confirm that is
+   the @STL_Offer_bot token and not an older bot; the chat ID only works with the bot
+   that the chat was started with.
+
+n8n's API cannot attach credentials to generic HTTP Request nodes, so the four GHL
+nodes are the one manual step: open each, set **Authentication → Generic Credential
+Type → Header Auth**, and pick your GHL bearer credential.
+
+## 2. Why the Baserow steps use the native node
+
+The two Baserow steps use the **Baserow node** rather than HTTP Request, because the
+Baserow Token API credential type only binds to that node. The update step is preceded
+by a small "Build Baserow Audit Row" Code node that emits exactly the audit columns, so
+the Baserow node's auto-map matches keys to columns by name. Do not add keys to that
+Code node's output unless the matching column exists in table 764 — Baserow rejects the
+whole update if one name is unknown.
 
 ## 3. Baserow webhook (the trigger) — needs fixing
 
@@ -87,33 +106,87 @@ are omitted from the payload rather than written as null.
   GHL stage → Telegram. A re-fire of the same Ready row recomputes identical values
   (deterministic on the row), so retries are safe; once `Underwritten`, re-fires are skipped.
 
-## 6. Go-live checklist (M5 accept)
+## 6. First test — including where the Privy doc fits
 
-Everything below is what's left to make the workflow testable end to end.
+**The Privy PDF is not uploaded to this workflow.** M2 (the Privy prefill writer) is
+not built. In the current design a human reads the Privy PDF and types the numbers into
+the worksheet — that is the human-in-the-loop step the brief asks for. So "uploading the
+first Privy doc" means: open the PDF, read it, and fill a Baserow row from it. The PDF
+itself only gets stored as a reference link in `privy_pdf_url`.
 
-1. **Baserow table fields.** The table exists (764) with intake fields. Confirm the 10
-   engine output fields from `docs/baserow-underwriting-worksheet.md` exist —
+### Before the first run
+
+1. **Baserow output columns.** Table 764 has the intake fields. Confirm the 11 engine
+   output columns from `docs/baserow-underwriting-worksheet.md` exist:
    `arv_minus_repairs`, `factor_used`, `new_mao`, `uw_spread`, `uw_ratio`,
-   `jv_opportunity_value`, `uw_reason`, `offer_note`, `seller_draft`, `computed_at`.
-   Baserow rejects a PATCH naming a field that doesn't exist, so a missing one fails
-   the writeback step.
-2. **Credentials.** Create the two HTTP Header Auth credentials (section 2) and select
-   them on all six HTTP nodes — n8n can't auto-assign those.
-3. **Telegram chat ID** on both Telegram nodes.
-4. **GHL Pre-LOI stage.** Make sure the wholesale pipeline actually has a stage whose
-   name contains "Pre-LOI". If not, add it in XLeads first.
-5. **GHL opportunity custom fields** (section 4) must exist on the opportunity object.
-6. **Fix the Baserow webhook** per section 3.
-7. **Test.** Point the webhook at `/webhook-test/…`, click "Listen for test event",
-   set a test row's `arv`, `repairs`, `ghl_contact_id`, `ghl_opportunity_id`, then flip
-   `status` to `Ready`. Walk the execution node by node.
-8. **Verify:** GHL opportunity fields populated, contact note created, Baserow row shows
-   outputs + `Underwritten` + `computed_at`, stage moved to Pre-LOI Ready, Telegram
-   summary received.
+   `jv_opportunity_value`, `uw_reason`, `offer_note`, `seller_draft`, `computed_at`,
+   and the `status` select with an `Underwritten` option. A missing column fails the
+   whole writeback.
+2. **GHL Bearer credential** on the four `GHL:` HTTP nodes (section 1b).
+3. **Verify the auto-assigned Baserow and Telegram credentials** are the right ones.
+4. **Pre-LOI stage** exists in pipeline `MXHfKwSzSiKSSDfkajSO`.
+5. **GHL opportunity custom fields** (section 4) exist.
+6. **Send `/start` to @STL_Offer_bot** from the target chat, or Telegram will reject
+   the send with "chat not found".
+
+### Dry run — no Baserow webhook needed
+
+You don't have to fix the webhook to test the engine. Pin fake input instead:
+
+1. Open the workflow, click the **Underwrite** node.
+2. On its input panel choose **Edit Output** on "Get Worksheet Row" (or use "Execute
+   step" with pinned data) and paste a row shaped like this, using real GHL IDs from a
+   test contact:
+
+```json
+{
+  "id": 1,
+  "ghl_contact_id": "<real contact id>",
+  "ghl_opportunity_id": "<real opportunity id>",
+  "property_address": "123 Test St, Baton Rouge LA",
+  "property_type": { "value": "SFR" },
+  "arv": 180000,
+  "repairs": 30000,
+  "contract_price": 95000,
+  "confidence": { "value": "High" },
+  "status": { "value": "Ready" },
+  "decision_makers": "Test Seller"
+}
+```
+
+3. **Execute Workflow**. Expected: `new_mao` = **107000**, `uw_spread` = **12000**,
+   `uw_ratio` = **0.5278**. Those exact numbers are asserted in `tests/underwrite.test.mjs`,
+   so if the node shows something else, the Code node drifted from the repo.
+4. Walk each node after it and confirm the GHL calls return 2xx.
+
+### Live run with a real Privy doc
+
+1. Open the Privy PDF for one SFR. Read off: address, beds/baths/sqft/lot/year,
+   the assessor value, and the comps you'll base ARV on.
+2. In Baserow table 764, create a row: paste `ghl_contact_id` and
+   `ghl_opportunity_id` from that contact in GHL, `property_address`,
+   `property_type` = `SFR`, the specs, `assessor_market_improved` (reference only —
+   **not** ARV), and `privy_pdf_url` / `landglide_url` as links.
+3. Enter **`arv`** and **`repairs`** — your judgement from the comps and condition.
+   Nothing else drives the offer.
+4. Optionally `contract_price` (enables spread/ratio), CTMAPO fields, `transcript_text`,
+   `confidence`.
+5. Leave `status` on `Draft` while you work.
+6. Fix the Baserow webhook per section 3, pointing at the **test** URL first.
+7. Click "Listen for test event" in n8n, then flip `status` to **`Ready`**.
+8. **Verify:** GHL opportunity custom fields populated, contact note created, the
+   Baserow row now shows the outputs + `Underwritten` + `computed_at`, opportunity moved
+   to Pre-LOI Ready, Telegram summary in chat 6707585706.
 9. Switch the webhook to the production URL and **activate** the workflow.
 
-The math itself is already covered by `node --test tests/` in this repo (10 fixtures),
-so step 7 is testing the plumbing, not the formula.
+### Deliberate failure test (worth doing once)
+
+Blank the `repairs` on a Draft row and set it to `Ready`. Expect: no writes anywhere,
+and a ⛔ halt message in Telegram naming the row. That confirms the guard works before
+you trust it with live sellers.
+
+The math is already covered by `node --test tests/` (10 fixtures), so these runs are
+testing plumbing and permissions, not the formula.
 
 ## Still open (from the brief, deliberately not built)
 

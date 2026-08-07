@@ -24,8 +24,8 @@
     {
       "id": "baa150f9-21b9-4f9b-879a-8cc39bf78760",
       "name": "Get Worksheet Row",
-      "type": "n8n-nodes-base.httpRequest",
-      "typeVersion": 4.4,
+      "type": "n8n-nodes-base.baserow",
+      "typeVersion": 1.1,
       "position": [
         -592,
         0
@@ -34,11 +34,11 @@
       "maxTries": 3,
       "waitBetweenTries": 2000,
       "parameters": {
-        "method": "GET",
-        "url": "=https://baserow.dfn8n.xyz/api/database/rows/table/764/{{ $json.body.items[0].id }}/?user_field_names=true",
-        "authentication": "genericCredentialType",
-        "genericAuthType": "httpHeaderAuth",
-        "options": {}
+        "resource": "row",
+        "operation": "get",
+        "authentication": "databaseToken",
+        "tableId": "764",
+        "rowId": "={{ $json.body.items[0].id }}"
       }
     },
     {
@@ -216,26 +216,40 @@
       }
     },
     {
-      "id": "665337c9-b5b7-4192-a0ff-d1b39dba5c48",
-      "name": "Baserow: Write Audit + Underwritten",
-      "type": "n8n-nodes-base.httpRequest",
-      "typeVersion": 4.4,
+      "id": "f81a44c7-9d3e-4b52-8c17-6a2049e3bd11",
+      "name": "Build Baserow Audit Row",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
       "position": [
         752,
+        -96
+      ],
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "language": "javaScript",
+        "jsCode": "// Emit only the Baserow audit fields so the Baserow node can auto-map\n// input keys to columns by name. Any extra key here would be sent as a\n// column that does not exist and fail the update.\nreturn [{ json: $('Underwrite').first().json.baserow_update }];"
+      }
+    },
+    {
+      "id": "665337c9-b5b7-4192-a0ff-d1b39dba5c48",
+      "name": "Baserow: Write Audit + Underwritten",
+      "type": "n8n-nodes-base.baserow",
+      "typeVersion": 1.1,
+      "position": [
+        976,
         -96
       ],
       "retryOnFail": true,
       "maxTries": 3,
       "waitBetweenTries": 2000,
       "parameters": {
-        "method": "PATCH",
-        "url": "=https://baserow.dfn8n.xyz/api/database/rows/table/764/{{ $('Underwrite').item.json.row_id }}/?user_field_names=true",
-        "authentication": "genericCredentialType",
-        "genericAuthType": "httpHeaderAuth",
-        "sendBody": true,
-        "specifyBody": "json",
-        "jsonBody": "={{ JSON.stringify($('Underwrite').item.json.baserow_update) }}",
-        "options": {}
+        "resource": "row",
+        "operation": "update",
+        "authentication": "databaseToken",
+        "tableId": "764",
+        "rowId": "={{ $('Underwrite').item.json.row_id }}",
+        "dataToSend": "autoMapInputData",
+        "inputsToIgnore": ""
       }
     },
     {
@@ -244,7 +258,7 @@
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.4,
       "position": [
-        976,
+        1200,
         -96
       ],
       "retryOnFail": true,
@@ -282,7 +296,7 @@
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
       "position": [
-        1200,
+        1424,
         -96
       ],
       "parameters": {
@@ -297,7 +311,7 @@
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.4,
       "position": [
-        1424,
+        1648,
         -96
       ],
       "retryOnFail": true,
@@ -329,14 +343,14 @@
       "type": "n8n-nodes-base.telegram",
       "typeVersion": 1.2,
       "position": [
-        1648,
+        1872,
         -96
       ],
       "webhookId": "c0f9bdbb-1778-468f-a868-1df275ffbf92",
       "parameters": {
         "resource": "message",
         "operation": "sendMessage",
-        "chatId": "REPLACE_TELEGRAM_CHAT_ID",
+        "chatId": "6707585706",
         "text": "={{ $('Underwrite').item.json.telegram_summary }}",
         "additionalFields": {
           "appendAttribution": false
@@ -356,7 +370,7 @@
       "parameters": {
         "resource": "message",
         "operation": "sendMessage",
-        "chatId": "REPLACE_TELEGRAM_CHAT_ID",
+        "chatId": "6707585706",
         "text": "=⛔ OFFER ENGINE HALT — worksheet row {{ $json.id }}\nAddress: {{ $json.property_address || \"(none)\" }}\nARV: {{ $json.arv || \"MISSING\" }} | Repairs: {{ $json.repairs || \"MISSING\" }}\nGHL contact: {{ $json.ghl_contact_id || \"MISSING\" }} | GHL opportunity: {{ $json.ghl_opportunity_id || \"MISSING\" }}\nNo offer was computed or written. Fix the worksheet row and set status back to Ready.",
         "additionalFields": {
           "appendAttribution": false
@@ -373,7 +387,7 @@
         -50
       ],
       "parameters": {
-        "content": "## WF-OFFER-ENGINE-SFR\nBaserow worksheet (status=Ready) → deterministic MAO → GHL + Baserow writeback → Telegram.\n\n**Code computes the offer. No LLM anywhere in this workflow.**\n\nWired: Baserow table 764 | GHL location fPnzZjzdvxzEGdkhdQ0e | pipeline MXHfKwSzSiKSSDfkajSO.\nThe Pre-LOI stage ID is resolved by name at run time, so no stage ID to paste.\n\nStill to do (see repo docs/setup-notes.md):\n1. Replace REPLACE_TELEGRAM_CHAT_ID in both Telegram nodes.\n2. Wire credentials: Baserow database token + GHL bearer (HTTP Header Auth).\n3. Fix the Baserow webhook: method POST, event \"Rows are updated\",\n   URL https://dfn8n.xyz/webhook/offer-engine-sfr\n\nseller_draft is written to a review field — NEVER auto-sent to the seller.",
+        "content": "## WF-OFFER-ENGINE-SFR\nBaserow worksheet (status=Ready) → deterministic MAO → GHL + Baserow writeback → Telegram.\n\n**Code computes the offer. No LLM anywhere in this workflow.**\n\nWired: Baserow table 764 | GHL location fPnzZjzdvxzEGdkhdQ0e | pipeline MXHfKwSzSiKSSDfkajSO.\nTelegram chat 6707585706 (@STL_Offer_bot). Pre-LOI stage resolved by name at run time.\n\nStill to do (see repo docs/setup-notes.md):\n1. Select the GHL Bearer header-auth credential on the four GHL HTTP nodes.\n2. Fix the Baserow webhook: method POST, event \"Rows are updated\",\n   URL https://dfn8n.xyz/webhook/offer-engine-sfr\n\nseller_draft is written to a review field — NEVER auto-sent to the seller.",
         "width": 524,
         "height": 200
       }
@@ -454,6 +468,17 @@
       ]
     },
     "GHL: Create Offer Note": {
+      "main": [
+        [
+          {
+            "node": "Build Baserow Audit Row",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Build Baserow Audit Row": {
       "main": [
         [
           {

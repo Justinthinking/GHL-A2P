@@ -64,6 +64,12 @@ const GHL_HEADERS = { parameters: [{ name: 'Version', value: '2021-07-28' }] };
 const BASEROW_TABLE_ID = '764';
 const GHL_LOCATION_ID = 'fPnzZjzdvxzEGdkhdQ0e';
 const GHL_PIPELINE_ID = 'MXHfKwSzSiKSSDfkajSO';
+const TELEGRAM_CHAT_ID = '6707585706';
+
+const AUDIT_ROW_JS = `// Emit only the Baserow audit fields so the Baserow node can auto-map
+// input keys to columns by name. Any extra key here would be sent as a
+// column that does not exist and fail the update.
+return [{ json: $('Underwrite').first().json.baserow_update }];`;
 
 // The Pre-LOI stage ID is not exposed in the GHL pipeline URL, so the workflow
 // resolves it by name at run time and fails loudly if the stage is missing.
@@ -103,18 +109,18 @@ const workflow = {
     {
       id: 'baa150f9-21b9-4f9b-879a-8cc39bf78760',
       name: 'Get Worksheet Row',
-      type: 'n8n-nodes-base.httpRequest',
-      typeVersion: 4.4,
+      type: 'n8n-nodes-base.baserow',
+      typeVersion: 1.1,
       position: [-592, 0],
       retryOnFail: true,
       maxTries: 3,
       waitBetweenTries: 2000,
       parameters: {
-        method: 'GET',
-        url: '=https://baserow.dfn8n.xyz/api/database/rows/table/' + BASEROW_TABLE_ID + '/{{ $json.body.items[0].id }}/?user_field_names=true',
-        authentication: 'genericCredentialType',
-        genericAuthType: 'httpHeaderAuth',
-        options: {},
+        resource: 'row',
+        operation: 'get',
+        authentication: 'databaseToken',
+        tableId: BASEROW_TABLE_ID,
+        rowId: '={{ $json.body.items[0].id }}',
       },
     },
     {
@@ -212,23 +218,30 @@ const workflow = {
       },
     },
     {
+      id: 'f81a44c7-9d3e-4b52-8c17-6a2049e3bd11',
+      name: 'Build Baserow Audit Row',
+      type: 'n8n-nodes-base.code',
+      typeVersion: 2,
+      position: [752, -96],
+      parameters: { mode: 'runOnceForAllItems', language: 'javaScript', jsCode: AUDIT_ROW_JS },
+    },
+    {
       id: '665337c9-b5b7-4192-a0ff-d1b39dba5c48',
       name: 'Baserow: Write Audit + Underwritten',
-      type: 'n8n-nodes-base.httpRequest',
-      typeVersion: 4.4,
-      position: [752, -96],
+      type: 'n8n-nodes-base.baserow',
+      typeVersion: 1.1,
+      position: [976, -96],
       retryOnFail: true,
       maxTries: 3,
       waitBetweenTries: 2000,
       parameters: {
-        method: 'PATCH',
-        url: "=https://baserow.dfn8n.xyz/api/database/rows/table/" + BASEROW_TABLE_ID + "/{{ $('Underwrite').item.json.row_id }}/?user_field_names=true",
-        authentication: 'genericCredentialType',
-        genericAuthType: 'httpHeaderAuth',
-        sendBody: true,
-        specifyBody: 'json',
-        jsonBody: "={{ JSON.stringify($('Underwrite').item.json.baserow_update) }}",
-        options: {},
+        resource: 'row',
+        operation: 'update',
+        authentication: 'databaseToken',
+        tableId: BASEROW_TABLE_ID,
+        rowId: "={{ $('Underwrite').item.json.row_id }}",
+        dataToSend: 'autoMapInputData',
+        inputsToIgnore: '',
       },
     },
     {
@@ -236,7 +249,7 @@ const workflow = {
       name: 'GHL: Fetch Pipeline Stages',
       type: 'n8n-nodes-base.httpRequest',
       typeVersion: 4.4,
-      position: [976, -96],
+      position: [1200, -96],
       retryOnFail: true,
       maxTries: 5,
       waitBetweenTries: 5000,
@@ -257,7 +270,7 @@ const workflow = {
       name: 'Resolve Pre-LOI Stage',
       type: 'n8n-nodes-base.code',
       typeVersion: 2,
-      position: [1200, -96],
+      position: [1424, -96],
       parameters: { mode: 'runOnceForAllItems', language: 'javaScript', jsCode: RESOLVE_STAGE_JS },
     },
     {
@@ -265,7 +278,7 @@ const workflow = {
       name: 'GHL: Stage → Pre-LOI Ready',
       type: 'n8n-nodes-base.httpRequest',
       typeVersion: 4.4,
-      position: [1424, -96],
+      position: [1648, -96],
       retryOnFail: true,
       maxTries: 5,
       waitBetweenTries: 5000,
@@ -287,12 +300,12 @@ const workflow = {
       name: 'Telegram: Team Summary',
       type: 'n8n-nodes-base.telegram',
       typeVersion: 1.2,
-      position: [1648, -96],
+      position: [1872, -96],
       webhookId: 'c0f9bdbb-1778-468f-a868-1df275ffbf92',
       parameters: {
         resource: 'message',
         operation: 'sendMessage',
-        chatId: 'REPLACE_TELEGRAM_CHAT_ID',
+        chatId: TELEGRAM_CHAT_ID,
         text: "={{ $('Underwrite').item.json.telegram_summary }}",
         additionalFields: { appendAttribution: false },
       },
@@ -307,7 +320,7 @@ const workflow = {
       parameters: {
         resource: 'message',
         operation: 'sendMessage',
-        chatId: 'REPLACE_TELEGRAM_CHAT_ID',
+        chatId: TELEGRAM_CHAT_ID,
         text:
           '=⛔ OFFER ENGINE HALT — worksheet row {{ $json.id }}\n' +
           'Address: {{ $json.property_address || "(none)" }}\n' +
@@ -329,11 +342,10 @@ const workflow = {
           'Baserow worksheet (status=Ready) → deterministic MAO → GHL + Baserow writeback → Telegram.\n\n' +
           '**Code computes the offer. No LLM anywhere in this workflow.**\n\n' +
           'Wired: Baserow table 764 | GHL location fPnzZjzdvxzEGdkhdQ0e | pipeline MXHfKwSzSiKSSDfkajSO.\n' +
-          'The Pre-LOI stage ID is resolved by name at run time, so no stage ID to paste.\n\n' +
+          'Telegram chat 6707585706 (@STL_Offer_bot). Pre-LOI stage resolved by name at run time.\n\n' +
           'Still to do (see repo docs/setup-notes.md):\n' +
-          '1. Replace REPLACE_TELEGRAM_CHAT_ID in both Telegram nodes.\n' +
-          '2. Wire credentials: Baserow database token + GHL bearer (HTTP Header Auth).\n' +
-          '3. Fix the Baserow webhook: method POST, event "Rows are updated",\n' +
+          '1. Select the GHL Bearer header-auth credential on the four GHL HTTP nodes.\n' +
+          '2. Fix the Baserow webhook: method POST, event "Rows are updated",\n' +
           '   URL https://dfn8n.xyz/webhook/offer-engine-sfr\n\n' +
           'seller_draft is written to a review field — NEVER auto-sent to the seller.',
         width: 524,
@@ -353,7 +365,8 @@ const workflow = {
     },
     'Underwrite': { main: [[{ node: 'GHL: Update Opportunity Fields', type: 'main', index: 0 }]] },
     'GHL: Update Opportunity Fields': { main: [[{ node: 'GHL: Create Offer Note', type: 'main', index: 0 }]] },
-    'GHL: Create Offer Note': { main: [[{ node: 'Baserow: Write Audit + Underwritten', type: 'main', index: 0 }]] },
+    'GHL: Create Offer Note': { main: [[{ node: 'Build Baserow Audit Row', type: 'main', index: 0 }]] },
+    'Build Baserow Audit Row': { main: [[{ node: 'Baserow: Write Audit + Underwritten', type: 'main', index: 0 }]] },
     'Baserow: Write Audit + Underwritten': { main: [[{ node: 'GHL: Fetch Pipeline Stages', type: 'main', index: 0 }]] },
     'GHL: Fetch Pipeline Stages': { main: [[{ node: 'Resolve Pre-LOI Stage', type: 'main', index: 0 }]] },
     'Resolve Pre-LOI Stage': { main: [[{ node: 'GHL: Stage → Pre-LOI Ready', type: 'main', index: 0 }]] },
