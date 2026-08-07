@@ -1,0 +1,437 @@
+{
+  "name": "WF-OFFER-ENGINE-SFR",
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "nodes": [
+    {
+      "id": "8b8e9c63-7f62-4342-956c-242e6e332044",
+      "name": "Baserow Webhook (rows.updated)",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2.1,
+      "position": [
+        -816,
+        0
+      ],
+      "webhookId": "e55dccc9-aa28-4e06-a08e-fc17a6d465e4",
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "offer-engine-sfr",
+        "responseMode": "onReceived",
+        "options": {}
+      }
+    },
+    {
+      "id": "baa150f9-21b9-4f9b-879a-8cc39bf78760",
+      "name": "Get Worksheet Row",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.4,
+      "position": [
+        -592,
+        0
+      ],
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 2000,
+      "parameters": {
+        "method": "GET",
+        "url": "=https://baserow.dfn8n.xyz/api/database/rows/table/REPLACE_BASEROW_TABLE_ID/{{ $json.body.items[0].id }}/?user_field_names=true",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "options": {}
+      }
+    },
+    {
+      "id": "b21b1868-a9e0-4224-aeac-47bc7fe7aca7",
+      "name": "Status Is Ready?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.3,
+      "position": [
+        -368,
+        0
+      ],
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "loose",
+            "version": 2
+          },
+          "combinator": "and",
+          "conditions": [
+            {
+              "id": "status-is-ready",
+              "leftValue": "={{ $json.status && $json.status.value ? $json.status.value : $json.status }}",
+              "rightValue": "Ready",
+              "operator": {
+                "type": "string",
+                "operation": "equals"
+              }
+            }
+          ]
+        },
+        "options": {}
+      }
+    },
+    {
+      "id": "6854d64f-5686-45c0-8ab8-280ad5cd4b26",
+      "name": "Guard: ARV, Repairs, GHL IDs",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.3,
+      "position": [
+        -144,
+        0
+      ],
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "loose",
+            "version": 2
+          },
+          "combinator": "and",
+          "conditions": [
+            {
+              "id": "arv-positive",
+              "leftValue": "={{ Number($json.arv) || 0 }}",
+              "rightValue": 0,
+              "operator": {
+                "type": "number",
+                "operation": "gt"
+              }
+            },
+            {
+              "id": "repairs-positive",
+              "leftValue": "={{ Number($json.repairs) || 0 }}",
+              "rightValue": 0,
+              "operator": {
+                "type": "number",
+                "operation": "gt"
+              }
+            },
+            {
+              "id": "contact-id-present",
+              "leftValue": "={{ $json.ghl_contact_id }}",
+              "rightValue": "",
+              "operator": {
+                "type": "string",
+                "operation": "notEmpty",
+                "singleValue": true
+              }
+            },
+            {
+              "id": "opportunity-id-present",
+              "leftValue": "={{ $json.ghl_opportunity_id }}",
+              "rightValue": "",
+              "operator": {
+                "type": "string",
+                "operation": "notEmpty",
+                "singleValue": true
+              }
+            }
+          ]
+        },
+        "options": {}
+      }
+    },
+    {
+      "id": "f250df09-0eb6-4e4e-82a6-4cef47f223cc",
+      "name": "Underwrite",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        80,
+        -96
+      ],
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "language": "javaScript",
+        "jsCode": "// ==== SYNC-START (mirrored inside the n8n Code node) ====\n\nconst ASSIGNMENT_FEE = 10000;\n\n// ARV band -> factor. Confirmed 2026-08-07 to ship with draft breakpoints;\n// edit here (and in the Code node) when Justin locks final cutoffs.\nconst FACTOR_TABLE = [\n  { maxArv: 100000, factor: 0.70 },\n  { maxArv: 150000, factor: 0.75 },\n  { maxArv: 200000, factor: 0.78 },\n  { maxArv: 300000, factor: 0.82 },\n  { maxArv: Infinity, factor: 0.849 },\n];\n\nclass UnderwriteHalt extends Error {}\n\nfunction toNumber(v) {\n  if (v === null || v === undefined || v === '') return null;\n  const n = Number(v);\n  return Number.isFinite(n) ? n : null;\n}\n\n// Baserow single-select fields arrive as { id, value, color }.\nfunction sel(v) {\n  return v && typeof v === 'object' && 'value' in v ? v.value : (v ?? null);\n}\n\nfunction usd(n) {\n  return '$' + Math.round(n).toLocaleString('en-US');\n}\n\nfunction pct(dec) {\n  return (dec * 100).toFixed(1) + '%';\n}\n\nfunction factorFor(arv) {\n  return FACTOR_TABLE.find((band) => arv <= band.maxArv).factor;\n}\n\nfunction underwrite(row, opts = {}) {\n  const now = opts.now instanceof Date ? opts.now : new Date();\n  const arv = toNumber(row.arv);\n  const repairs = toNumber(row.repairs);\n  const contractPrice = toNumber(row.contract_price);\n  const propertyType = sel(row.property_type) || 'SFR';\n  const confidence = sel(row.confidence);\n  const jv = toNumber(row.jv_opportunity_value);\n\n  if (!(arv > 0)) {\n    throw new UnderwriteHalt('arv is missing or zero — refusing to write a $0 offer');\n  }\n  if (!(repairs > 0)) {\n    throw new UnderwriteHalt('repairs is missing or zero — refusing to compute');\n  }\n\n  const net = arv - repairs;\n  const factor = factorFor(arv);\n  const newMao = Math.round(net * factor - ASSIGNMENT_FEE);\n  const uwSpread = contractPrice !== null ? newMao - contractPrice : null;\n  const uwRatio = contractPrice !== null ? Number((contractPrice / arv).toFixed(4)) : null;\n\n  const spreadRatioText = contractPrice !== null\n    ? 'spread ' + usd(uwSpread) + ' / ratio ' + pct(uwRatio)\n    : 'contract pending';\n\n  const uwReason =\n    'NEW MAO ' + usd(newMao) +\n    ' = (ARV ' + usd(arv) + ' − Repairs ' + usd(repairs) + ' = ' + usd(net) + ') × ' + factor +\n    ' − ' + usd(ASSIGNMENT_FEE) + ' fee | type ' + propertyType + ' | ' + spreadRatioText;\n\n  const address = row.property_address || '(no address)';\n\n  const offerNote =\n    'OFFER — ' + address + '\\n' +\n    'NEW MAO: ' + usd(newMao) +\n    '   (ARV ' + usd(arv) + ' − Repairs ' + usd(repairs) + ' = ' + usd(net) +\n    ' × ' + factor + ' − ' + usd(ASSIGNMENT_FEE) + ')\\n' +\n    'Type: ' + propertyType +\n    ' | Spread: ' + (uwSpread !== null ? usd(uwSpread) : 'pending') +\n    ' | Ratio: ' + (uwRatio !== null ? pct(uwRatio) : 'pending') + '\\n' +\n    'Confidence: ' + (confidence || 'n/a') + ' | ' + uwReason;\n\n  const firstName = String(row.decision_makers || '').trim().split(/[\\s,]+/)[0] || 'there';\n  const sellerDraft =\n    'Hey ' + firstName + \" — ran your numbers on \" + address +\n    \" and I've got a real figure ready. \" +\n    'Can my partner call you today at 1 PM or 4 PM to walk through it? Which works better?';\n\n  const telegramSummary =\n    '🏠 UNDERWRITTEN — ' + address + '\\n' +\n    'ARV ' + usd(arv) + ' | Repairs ' + usd(repairs) + '\\n' +\n    'NEW MAO: ' + usd(newMao) + '\\n' +\n    'Spread: ' + (uwSpread !== null ? usd(uwSpread) : 'pending') +\n    ' | Ratio: ' + (uwRatio !== null ? pct(uwRatio) : 'pending') + '\\n' +\n    'Confidence: ' + (confidence || 'n/a');\n\n  return {\n    arv,\n    repairs,\n    contract_price: contractPrice,\n    property_type: propertyType,\n    arv_minus_repairs: net,\n    factor_used: factor,\n    new_mao: newMao,\n    uw_spread: uwSpread,\n    uw_ratio: uwRatio,\n    jv_opportunity_value: jv,\n    confidence: confidence ?? null,\n    uw_reason: uwReason,\n    offer_note: offerNote,\n    seller_draft: sellerDraft,\n    telegram_summary: telegramSummary,\n    computed_at: now.toISOString(),\n  };\n}\n\n// ==== SYNC-END ====\n\nconst row = $input.first().json;\nconst result = underwrite(row);\n\nconst ghl_custom_fields = [\n  ['new_mao', result.new_mao],\n  ['arvrepairs', result.arv_minus_repairs],\n  ['repairs', result.repairs],\n  ['contract_price', result.contract_price],\n  ['uwspread', result.uw_spread],\n  ['uwratio', result.uw_ratio],\n  ['uw_reason', result.uw_reason],\n  ['property_types', result.property_type],\n  ['unit_count', toNumber(row.unit_count)],\n  ['unit_rent_monthly', toNumber(row.unit_rent_monthly)],\n  ['hoa_monthly', toNumber(row.hoa_monthly)],\n  ['jv_opportunity_value', result.jv_opportunity_value],\n]\n  .filter(([, v]) => v !== null && v !== undefined)\n  .map(([key, field_value]) => ({ key, field_value }));\n\nconst baserow_update = {\n  arv_minus_repairs: result.arv_minus_repairs,\n  factor_used: result.factor_used,\n  new_mao: result.new_mao,\n  uw_spread: result.uw_spread,\n  uw_ratio: result.uw_ratio,\n  jv_opportunity_value: result.jv_opportunity_value,\n  uw_reason: result.uw_reason,\n  offer_note: result.offer_note,\n  seller_draft: result.seller_draft,\n  computed_at: result.computed_at,\n  status: 'Underwritten',\n};\n\nreturn [{\n  json: {\n    row_id: row.id,\n    ghl_contact_id: row.ghl_contact_id,\n    ghl_opportunity_id: row.ghl_opportunity_id,\n    property_address: row.property_address || '(no address)',\n    ...result,\n    ghl_custom_fields,\n    baserow_update,\n  },\n}];"
+      }
+    },
+    {
+      "id": "6e166df8-187f-42ad-8abb-68df872afb1c",
+      "name": "GHL: Update Opportunity Fields",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.4,
+      "position": [
+        304,
+        -96
+      ],
+      "retryOnFail": true,
+      "maxTries": 5,
+      "waitBetweenTries": 5000,
+      "parameters": {
+        "method": "PUT",
+        "url": "=https://services.leadconnectorhq.com/opportunities/{{ $json.ghl_opportunity_id }}",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Version",
+              "value": "2021-07-28"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ customFields: $json.ghl_custom_fields }) }}",
+        "options": {}
+      }
+    },
+    {
+      "id": "e8537dc0-1f89-4abd-93ef-9d88d16a03e2",
+      "name": "GHL: Create Offer Note",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.4,
+      "position": [
+        528,
+        -96
+      ],
+      "retryOnFail": true,
+      "maxTries": 5,
+      "waitBetweenTries": 5000,
+      "parameters": {
+        "method": "POST",
+        "url": "=https://services.leadconnectorhq.com/contacts/{{ $('Underwrite').item.json.ghl_contact_id }}/notes",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Version",
+              "value": "2021-07-28"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ body: $('Underwrite').item.json.offer_note }) }}",
+        "options": {}
+      }
+    },
+    {
+      "id": "665337c9-b5b7-4192-a0ff-d1b39dba5c48",
+      "name": "Baserow: Write Audit + Underwritten",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.4,
+      "position": [
+        752,
+        -96
+      ],
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 2000,
+      "parameters": {
+        "method": "PATCH",
+        "url": "=https://baserow.dfn8n.xyz/api/database/rows/table/REPLACE_BASEROW_TABLE_ID/{{ $('Underwrite').item.json.row_id }}/?user_field_names=true",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify($('Underwrite').item.json.baserow_update) }}",
+        "options": {}
+      }
+    },
+    {
+      "id": "c9dde99d-d2c7-4086-a92c-d0fc9ee7ba8b",
+      "name": "GHL: Stage → Pre-LOI Ready",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.4,
+      "position": [
+        976,
+        -96
+      ],
+      "retryOnFail": true,
+      "maxTries": 5,
+      "waitBetweenTries": 5000,
+      "parameters": {
+        "method": "PUT",
+        "url": "=https://services.leadconnectorhq.com/opportunities/{{ $('Underwrite').item.json.ghl_opportunity_id }}",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Version",
+              "value": "2021-07-28"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "{\"pipelineId\":\"REPLACE_GHL_PIPELINE_ID\",\"pipelineStageId\":\"REPLACE_GHL_STAGE_PRELOI_READY_ID\"}",
+        "options": {}
+      }
+    },
+    {
+      "id": "5f290492-d7b4-4add-b9e3-86cf3a0764ea",
+      "name": "Telegram: Team Summary",
+      "type": "n8n-nodes-base.telegram",
+      "typeVersion": 1.2,
+      "position": [
+        1200,
+        -96
+      ],
+      "webhookId": "c0f9bdbb-1778-468f-a868-1df275ffbf92",
+      "parameters": {
+        "resource": "message",
+        "operation": "sendMessage",
+        "chatId": "REPLACE_TELEGRAM_CHAT_ID",
+        "text": "={{ $('Underwrite').item.json.telegram_summary }}",
+        "additionalFields": {
+          "appendAttribution": false
+        }
+      }
+    },
+    {
+      "id": "b1640dfc-1f16-433c-b324-e25946664eb8",
+      "name": "Telegram: Halt Alert",
+      "type": "n8n-nodes-base.telegram",
+      "typeVersion": 1.2,
+      "position": [
+        80,
+        208
+      ],
+      "webhookId": "e6295f39-02c6-42e5-83fb-6e8343c24893",
+      "parameters": {
+        "resource": "message",
+        "operation": "sendMessage",
+        "chatId": "REPLACE_TELEGRAM_CHAT_ID",
+        "text": "=⛔ OFFER ENGINE HALT — worksheet row {{ $json.id }}\nAddress: {{ $json.property_address || \"(none)\" }}\nARV: {{ $json.arv || \"MISSING\" }} | Repairs: {{ $json.repairs || \"MISSING\" }}\nGHL contact: {{ $json.ghl_contact_id || \"MISSING\" }} | GHL opportunity: {{ $json.ghl_opportunity_id || \"MISSING\" }}\nNo offer was computed or written. Fix the worksheet row and set status back to Ready.",
+        "additionalFields": {
+          "appendAttribution": false
+        }
+      }
+    },
+    {
+      "id": "2d51332d-4959-45de-8148-46cc503d2705",
+      "name": "Sticky Note",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        -866,
+        -50
+      ],
+      "parameters": {
+        "content": "## WF-OFFER-ENGINE-SFR\nBaserow worksheet (status=Ready) → deterministic MAO → GHL + Baserow writeback → Telegram.\n\n**Code computes the offer. No LLM anywhere in this workflow.**\n\nSetup (see repo docs/setup-notes.md):\n1. Replace REPLACE_BASEROW_TABLE_ID in both Baserow HTTP nodes.\n2. Replace REPLACE_GHL_PIPELINE_ID / REPLACE_GHL_STAGE_PRELOI_READY_ID in the stage node.\n3. Wire credentials: Baserow token, GHL bearer, Telegram bot. Set both chat IDs.\n4. Create the Baserow webhook (rows.updated, user field names ON) → this workflow URL.\n\nseller_draft is written to a review field — NEVER auto-sent to the seller.",
+        "width": 524,
+        "height": 200
+      }
+    }
+  ],
+  "connections": {
+    "Baserow Webhook (rows.updated)": {
+      "main": [
+        [
+          {
+            "node": "Get Worksheet Row",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Get Worksheet Row": {
+      "main": [
+        [
+          {
+            "node": "Status Is Ready?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Status Is Ready?": {
+      "main": [
+        [
+          {
+            "node": "Guard: ARV, Repairs, GHL IDs",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Guard: ARV, Repairs, GHL IDs": {
+      "main": [
+        [
+          {
+            "node": "Underwrite",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Telegram: Halt Alert",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Underwrite": {
+      "main": [
+        [
+          {
+            "node": "GHL: Update Opportunity Fields",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "GHL: Update Opportunity Fields": {
+      "main": [
+        [
+          {
+            "node": "GHL: Create Offer Note",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "GHL: Create Offer Note": {
+      "main": [
+        [
+          {
+            "node": "Baserow: Write Audit + Underwritten",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Baserow: Write Audit + Underwritten": {
+      "main": [
+        [
+          {
+            "node": "GHL: Stage → Pre-LOI Ready",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "GHL: Stage → Pre-LOI Ready": {
+      "main": [
+        [
+          {
+            "node": "Telegram: Team Summary",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  }
+}
