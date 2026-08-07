@@ -23,6 +23,7 @@ ARV-band lookup table.
 | `scripts/build-workflow-json.mjs` | Regenerates the JSON from `src/underwrite.mjs` |
 | `docs/baserow-underwriting-worksheet.md` | Baserow create-table + form checklist (M0/M1) |
 | `docs/setup-notes.md` | Placeholders, credentials, webhook setup, go-live checklist |
+| `docs/roadmap-v2-telegram-intake.md` | V2 plan: GHL stage → Baserow intake, Privy PDF via Telegram, LLM extraction, approval buttons |
 
 Live (inactive until credentials are wired): https://dfn8n.xyz/workflow/xMXAC2ESeeO6eqhn
 
