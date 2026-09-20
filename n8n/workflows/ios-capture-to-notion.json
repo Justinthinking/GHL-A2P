@@ -1,0 +1,513 @@
+{
+  "name": "iOS Shortcut → Notion Capture Inbox",
+  "nodes": [
+    {
+      "parameters": {
+        "path": "capture",
+        "httpMethod": "POST",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "id": "capture-webhook",
+      "name": "Capture Webhook",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [
+        -880,
+        300
+      ],
+      "webhookId": "a7k2m9d0-1111-4222-8333-444455556666",
+      "notes": "POST target for the iOS Shortcut."
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "db",
+              "name": "notionDatabaseId",
+              "value": "be0733d8-69a0-443d-b517-dc35d798a36d",
+              "type": "string"
+            },
+            {
+              "id": "ver",
+              "name": "notionVersion",
+              "value": "2022-06-28",
+              "type": "string"
+            },
+            {
+              "id": "status",
+              "name": "defaultStatus",
+              "value": "Inbox",
+              "type": "string"
+            }
+          ]
+        },
+        "includeOtherFields": true,
+        "options": {}
+      },
+      "id": "config",
+      "name": "Config",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        -660,
+        300
+      ],
+      "notes": "The only node to edit when pointing this at a different database."
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "language": "javaScript",
+        "jsCode": "// Turns the raw iOS Shortcut POST body into a ready-to-send Notion page payload.\n// Nothing downstream needs to know the shape of the Shortcut's JSON.\n\nconst MAX_BLOCK_CHARS = 1900; // Notion caps a rich_text object at 2000 chars\nconst MAX_TITLE_CHARS = 200;\nconst MAX_CHILDREN = 95;      // Notion caps a page-create at 100 children\nconst MAX_OVERFLOW = 100;     // ...and a block-append at 100 more\n\nconst toNumber = (v) => {\n  if (v === null || v === undefined || v === '') return null; // Number('') is 0, which is a lie\n  const n = Number(v);\n  return Number.isFinite(n) ? n : null;\n};\n\n// Break on paragraph, then word, then hard-cut — so blocks split where a human would.\nconst chunkText = (text, size) => {\n  const chunks = [];\n  let rest = text;\n  while (rest.length > size) {\n    let cut = rest.lastIndexOf('\\n', size);\n    if (cut < size * 0.5) cut = rest.lastIndexOf(' ', size);\n    if (cut < size * 0.5) cut = size;\n    chunks.push(rest.slice(0, cut).trim());\n    rest = rest.slice(cut).trim();\n  }\n  if (rest) chunks.push(rest);\n  return chunks;\n};\n\nconst paragraph = (content) => ({\n  object: 'block',\n  type: 'paragraph',\n  paragraph: { rich_text: [{ type: 'text', text: { content } }] },\n});\n\nreturn $input.all().map((item) => {\n  const cfg = item.json;\n  const body = cfg.body ?? {};\n  const errors = [];\n\n  const captureId = String(body.captureId ?? '').trim();\n  const transcript = String(body.transcript ?? '').trim();\n  let title = String(body.title ?? '').trim();\n\n  if (!captureId) errors.push('captureId is required');\n  if (!transcript && !title) errors.push('at least one of title or transcript is required');\n\n  // Title falls back to the first sentence of the transcript.\n  if (!title && transcript) {\n    title = transcript.split(/(?<=[.!?])\\s/)[0] || transcript;\n  }\n  if (title.length > MAX_TITLE_CHARS) {\n    title = title.slice(0, MAX_TITLE_CHARS - 1).trimEnd() + '…';\n  }\n\n  // captureId carries its own timestamp: YYYYMMDD-HHMM__slug\n  let capturedAt = null;\n  const stamp = captureId.match(/^(\\d{4})(\\d{2})(\\d{2})-(\\d{2})(\\d{2})/);\n  if (stamp) {\n    capturedAt = `${stamp[1]}-${stamp[2]}-${stamp[3]}T${stamp[4]}:${stamp[5]}:00`;\n  }\n\n  const duration = toNumber(body.duration);\n  const sizeBytes = toNumber(body.size);\n  const sizeMb = sizeBytes === null ? null : Math.round((sizeBytes / 1048576) * 100) / 100;\n  const wordCount = transcript ? transcript.split(/\\s+/).filter(Boolean).length : 0;\n  const device = String(body.device ?? '').trim() || null;\n\n  const properties = {\n    'Name': { title: [{ type: 'text', text: { content: title || captureId } }] },\n    'Capture ID': { rich_text: [{ type: 'text', text: { content: captureId } }] },\n    'Status': { select: { name: cfg.defaultStatus || 'Inbox' } },\n    'Source': { select: { name: 'iOS Shortcut' } },\n    'Word Count': { number: wordCount },\n  };\n  // Notion creates the select option on the fly when the device is a new one.\n  if (device) properties['Device'] = { select: { name: device } };\n  if (duration !== null) properties['Duration (s)'] = { number: duration };\n  if (sizeMb !== null) properties['Size (MB)'] = { number: sizeMb };\n  if (capturedAt) properties['Captured At'] = { date: { start: capturedAt } };\n\n  const meta = [\n    device,\n    duration !== null ? `${duration}s` : null,\n    sizeMb !== null ? `${sizeMb} MB` : null,\n    wordCount ? `${wordCount} words` : null,\n  ].filter(Boolean).join('  ·  ');\n\n  const children = [{\n    object: 'block',\n    type: 'callout',\n    callout: {\n      icon: { emoji: '📱' },\n      color: 'gray_background',\n      rich_text: [{ type: 'text', text: { content: [captureId, meta].filter(Boolean).join('  ·  ') } }],\n    },\n  }];\n\n  let overflow = [];\n  if (transcript) {\n    children.push({\n      object: 'block',\n      type: 'heading_2',\n      heading_2: { rich_text: [{ type: 'text', text: { content: 'Transcript' } }] },\n    });\n    const chunks = chunkText(transcript, MAX_BLOCK_CHARS).map(paragraph);\n    children.push(...chunks.slice(0, MAX_CHILDREN));\n    // Beyond ~370k characters the transcript is genuinely cut; say so on the page\n    // rather than dropping it silently, and keep the append batch at Notion's 100.\n    if (chunks.length > MAX_CHILDREN + MAX_OVERFLOW) {\n      overflow = chunks.slice(MAX_CHILDREN, MAX_CHILDREN + MAX_OVERFLOW - 1);\n      overflow.push(paragraph('⚠️ Transcript truncated — exceeded the Notion block ceiling for one capture.'));\n    } else {\n      overflow = chunks.slice(MAX_CHILDREN);\n    }\n  }\n\n  return {\n    json: {\n      valid: errors.length === 0,\n      errors,\n      captureId,\n      title,\n      device,\n      duration,\n      sizeBytes,\n      sizeMb,\n      wordCount,\n      capturedAt,\n      notionDatabaseId: cfg.notionDatabaseId,\n      notionVersion: cfg.notionVersion,\n      properties,\n      children,\n      overflow,\n      hasOverflow: overflow.length > 0,\n    },\n  };\n});\n"
+      },
+      "id": "normalize-capture",
+      "name": "Normalize Capture",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -440,
+        300
+      ],
+      "notes": "Validates, coerces types, derives Captured At, chunks the transcript into Notion blocks."
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "c1",
+              "leftValue": "={{ $json.valid }}",
+              "rightValue": "",
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "looseTypeValidation": false,
+        "options": {}
+      },
+      "id": "valid-payload",
+      "name": "Valid Payload?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        -220,
+        300
+      ],
+      "notes": "Bad payloads get a 400 instead of a silent failure."
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "=https://api.notion.com/v1/databases/{{ $json.notionDatabaseId }}/query",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "notionApi",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Notion-Version",
+              "value": "={{ $json.notionVersion }}"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ page_size: 1, filter: { property: 'Capture ID', rich_text: { equals: $json.captureId } } }) }}",
+        "options": {}
+      },
+      "id": "find-existing-capture",
+      "name": "Find Existing Capture",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        20,
+        180
+      ],
+      "notes": "Idempotency guard: the Shortcut retries on flaky cell service.",
+      "onError": "continueErrorOutput"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "c1",
+              "leftValue": "={{ $json.results.length }}",
+              "rightValue": 0,
+              "operator": {
+                "type": "number",
+                "operation": "gt"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "looseTypeValidation": false,
+        "options": {}
+      },
+      "id": "already-captured",
+      "name": "Already Captured?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        240,
+        180
+      ],
+      "notes": "True means this captureId is already a row."
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://api.notion.com/v1/pages",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "notionApi",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Notion-Version",
+              "value": "={{ $('Normalize Capture').item.json.notionVersion }}"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ parent: { database_id: $('Normalize Capture').item.json.notionDatabaseId }, icon: { emoji: '🎙️' }, properties: $('Normalize Capture').item.json.properties, children: $('Normalize Capture').item.json.children }) }}",
+        "options": {}
+      },
+      "id": "create-notion-page",
+      "name": "Create Notion Page",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        460,
+        300
+      ],
+      "notes": "Raw API call, not the Notion node: only this can write a dynamic number of transcript blocks.",
+      "onError": "continueErrorOutput"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "c1",
+              "leftValue": "={{ $('Normalize Capture').item.json.hasOverflow }}",
+              "rightValue": "",
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "looseTypeValidation": false,
+        "options": {}
+      },
+      "id": "has-overflow",
+      "name": "Has Overflow?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        680,
+        300
+      ],
+      "notes": "Only long transcripts need a second call."
+    },
+    {
+      "parameters": {
+        "method": "PATCH",
+        "url": "=https://api.notion.com/v1/blocks/{{ $('Create Notion Page').item.json.id }}/children",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "notionApi",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Notion-Version",
+              "value": "={{ $('Normalize Capture').item.json.notionVersion }}"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ children: $('Normalize Capture').item.json.overflow }) }}",
+        "options": {}
+      },
+      "id": "append-overflow-blocks",
+      "name": "Append Overflow Blocks",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        900,
+        180
+      ],
+      "notes": "Notion caps page-create at 100 children; this appends the rest.",
+      "onError": "continueErrorOutput"
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ JSON.stringify({ ok: true, status: 'created', captureId: $('Normalize Capture').item.json.captureId, pageId: $('Create Notion Page').item.json.id, pageUrl: $('Create Notion Page').item.json.url }) }}",
+        "options": {
+          "responseCode": 201
+        }
+      },
+      "id": "respond---created",
+      "name": "Respond — Created",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [
+        1140,
+        300
+      ],
+      "notes": "The Shortcut can open pageUrl straight from the response."
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ JSON.stringify({ ok: true, status: 'duplicate', captureId: $('Normalize Capture').item.json.captureId, pageId: $json.results[0].id, pageUrl: $json.results[0].url }) }}",
+        "options": {
+          "responseCode": 200
+        }
+      },
+      "id": "respond---duplicate",
+      "name": "Respond — Duplicate",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [
+        460,
+        60
+      ],
+      "notes": "Replays are a success, not an error."
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ JSON.stringify({ ok: false, status: 'invalid', errors: $json.errors }) }}",
+        "options": {
+          "responseCode": 400
+        }
+      },
+      "id": "respond---invalid",
+      "name": "Respond — Invalid",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [
+        20,
+        460
+      ],
+      "notes": "Tells the Shortcut exactly which field was missing."
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ JSON.stringify({ ok: false, status: 'notion_error', captureId: $('Normalize Capture').first().json.captureId, message: $json.error?.message ?? $json.message ?? 'Notion request failed' }) }}",
+        "options": {
+          "responseCode": 502
+        }
+      },
+      "id": "respond---notion-error",
+      "name": "Respond — Notion Error",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [
+        900,
+        560
+      ],
+      "notes": "Surfaces the Notion failure instead of a bare 500."
+    },
+    {
+      "parameters": {
+        "content": "## iOS Shortcut → Notion Capture Inbox\n\n**Setup**\n1. Add a **Notion API** credential (internal integration token) and select it on the three HTTP Request nodes.\n2. Share the **Capture Inbox** database with that integration (Notion → ⋯ → Connections).\n3. Activate the workflow and copy the production webhook URL into the Shortcut.\n\n**Contract** — POST JSON:\n`captureId` (required, `YYYYMMDD-HHMM__slug`), `title`, `transcript`, `device`, `duration` (seconds), `size` (bytes).\n\nSwap databases in **Config** — nowhere else.",
+        "height": 380,
+        "width": 460,
+        "color": 4
+      },
+      "id": "sticky-setup",
+      "name": "Setup",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        -1420,
+        160
+      ]
+    }
+  ],
+  "connections": {
+    "Capture Webhook": {
+      "main": [
+        [
+          {
+            "node": "Config",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Config": {
+      "main": [
+        [
+          {
+            "node": "Normalize Capture",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Normalize Capture": {
+      "main": [
+        [
+          {
+            "node": "Valid Payload?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Valid Payload?": {
+      "main": [
+        [
+          {
+            "node": "Find Existing Capture",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Respond — Invalid",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Find Existing Capture": {
+      "main": [
+        [
+          {
+            "node": "Already Captured?",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Respond — Notion Error",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Already Captured?": {
+      "main": [
+        [
+          {
+            "node": "Respond — Duplicate",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Create Notion Page",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Create Notion Page": {
+      "main": [
+        [
+          {
+            "node": "Has Overflow?",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Respond — Notion Error",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Has Overflow?": {
+      "main": [
+        [
+          {
+            "node": "Append Overflow Blocks",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Respond — Created",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Append Overflow Blocks": {
+      "main": [
+        [
+          {
+            "node": "Respond — Created",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Respond — Notion Error",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "pinData": {},
+  "active": false,
+  "tags": []
+}
