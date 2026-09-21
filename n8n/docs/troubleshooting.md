@@ -92,44 +92,114 @@ See the open issue below. This is currently expected behaviour, not a fault.
 
 ## Open issues
 
-### 1. The random suffix defeats idempotency — highest priority
+### 1. captureId must never contain a random part — resolved
 
-`captureId` is built as `Date Created` + `__` + `Random Number`. Date Created is
-stable for a given video; the random number is regenerated on every run. So the
-same video shared twice produces two different captureIds, the upsert never
-matches, and you get two rows.
+`captureId` used to be `Date Created` + `__` + `Random Number`. The random part
+regenerated on every run, so the same video produced a different key each time,
+the upsert could never match, and re-sharing made a second row. Executions 2140
+and 2141 are the proof: same video, same `Date Created`, suffixes `__718409` and
+`__627695`, two pages created.
 
-**This already happened.** Executions 2140 and 2141 both carry Date Created
-`2026-09-21T09:09:12-05:00` — the same video, 1.5 minutes apart — with suffixes
-`__718409` and `__627695`. Both created pages. One was deleted by hand afterward.
+This mattered beyond duplicates. The upsert exists so the host capture agent,
+ffprobe and the doorman can PATCH into a row that already exists — all of which
+need a key that is stable for a given capture.
 
-The entire upsert design rests on captureId being stable for a given capture. With a
-random component it can never be, which also means the host capture agent, ffprobe
-and the doorman have no reliable key to PATCH against later.
+**Now:** `yyyyMMdd-HHmmss__<lowercase original name>`, e.g.
+`20260921-093623__img_2631`. Both components are properties of the file, so the
+same video yields the same key forever. Verified — posting that id twice returns
+`created` then `updated` against one page.
 
-**Fix:** delete the `Random Number` action and the `__[Random Number]` part of the
-Text action. Leave captureId as the bare ISO timestamp. Second-level precision on a
-per-device capture is already collision-safe — two videos cannot share a creation
-second on one device. If you want belt-and-braces, append something derived from the
-file (original filename) rather than something random.
+**The rule:** nothing in captureId may vary between two sends of the same
+capture. No random numbers, no `now()`, no counters. Derive every component from
+the file itself.
 
 ### 2. Colons in filenames
 
-captureId doubles as the filename, so files are now named
-`2026-09-21T09:36:23-05:00__124308.md`. Colons are legal in APFS at the POSIX layer
-but Finder renders them as `/`, and they are illegal on exFAT/SMB and awkward in
-shell paths without quoting. The Mac-side doorman will have to handle this.
+captureId doubled as the filename during the ISO period, producing files named
+`2026-09-21T09:36:23-05:00__124308.md`. Colons are legal in APFS at the POSIX
+layer but Finder renders them as `/`, they are illegal on exFAT/SMB, and they
+need quoting in every shell path. The `yyyyMMdd-HHmmss` format removes the
+problem; the doorman still has to cope with the four legacy rows.
 
-Consider a filename-safe variant — `yyyyMMdd-HHmmss` — while keeping the ISO form in
-the `capturedAt` body field for the date property. That gives clean filenames and a
-precise timestamp, and restores compatibility with the original compact format.
-
-### 3. `Captured At` was empty on ISO captureIds — fixed
+### 3. `Captured At` — two failures, both fixed
 
 The original parser only matched the compact `YYYYMMDD-HHMM` prefix, so every row
 created after the Shortcut switched to ISO had a null date. `parseCaptureStamp` now
 accepts both and preserves the UTC offset. Deployed, and the three affected rows have
 been backfilled.
+
+## Timestamps and time zones
+
+### A datetime with no offset is wrong by the zone's offset
+
+Notion reads an offset-less datetime as **UTC**. A Central capture sent as the
+naive string `2026-09-20T21:40:00` therefore landed on the page as 4:40 PM —
+exactly 5 hours early, which reads like a plausible time rather than an obvious
+bug. That is what makes this failure mode dangerous: nothing errors, and the
+date looks reasonable.
+
+Every datetime the workflow writes now carries an explicit offset, computed for
+its own wall-clock instant via `Intl`, so DST is resolved rather than assumed:
+`America/Chicago` is `-05:00` in July and `-06:00` in January. The zone is
+`captureTimeZone` in the **Config** node — never hardcoded in the parser.
+
+Symptom to watch for: a Captured At that is off by exactly 5 or 6 hours. That is
+always a missing offset, never a rounding error.
+
+### Notion truncates seconds — platform limit, not a bug here
+
+The workflow emits full precision. `20260921-093623__img_2631` produces
+`2026-09-21T09:36:23-05:00`, seconds intact. Notion stores `14:36:00Z` — correct
+minute, seconds zeroed. Confirmed identically through the n8n HTTP path and the
+Notion MCP, so it is the date property itself, not the workflow.
+
+Seconds are not lost from the record: captureId carries them, and it is stored
+verbatim in the Capture ID column. If a Notion view ever needs second precision,
+it has to come from that column, not from Captured At.
+
+### Container time zone is not Central
+
+Probed on the executing process:
+
+```json
+{ "GENERIC_TIMEZONE": "America/Los_Angeles",
+  "TZ":               "America/Los_Angeles",
+  "EXECUTIONS_MODE":  "queue",
+  "node_tz":          "America/Los_Angeles" }
+```
+
+**Captured At is unaffected** — the code passes `captureTimeZone` to `Intl`
+explicitly, so it never consults the container zone.
+
+It does affect everything else that touches dates: Schedule Trigger cron times,
+`$now`, `$today`, and date formatting in any other node all run on Pacific. For
+the audit loop, a "9am" schedule would fire at 11am Central. Worth aligning
+before that gets built.
+
+Caveat on the probe: in queue mode the expression evaluates on whichever worker
+ran it, so this reflects a worker, not necessarily the main or webhook process.
+Confirming those needs shell access to the host.
+
+## Doorman — capture ID matching
+
+The regex `^\d{8}-\d{4}__\d{6}` matches none of the formats now in use. It
+requires exactly six digits after the separator, which was only ever true of the
+retired random-suffix scheme.
+
+Going forward, match only the current format:
+
+```
+^\d{8}-\d{6}__[a-z0-9._-]+$
+```
+
+While the four legacy rows still exist, this accepts all three shapes:
+
+```
+^(?:\d{8}-\d{6}|\d{8}-\d{4}|\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:Z|[+-]\d{2}:?\d{2})?)__[A-Za-z0-9._-]+$
+```
+
+Treat the four legacy rows plus `20260921-093623__img_2631` as test data — they
+predate the stable-key format and can be deleted once the doorman is real.
 
 ## Response reference
 
