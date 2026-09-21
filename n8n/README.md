@@ -15,6 +15,7 @@ Target database: **Capture Inbox** — https://app.notion.com/p/be0733d869a0443d
   "captureId": "20260920-1731__a7k2m9",
   "title": "This is the first sentence of the video transcript",
   "transcript": "This is the full text of the video...",
+  "capturedAt": "2026-09-20T17:31:00-05:00",
   "device": "iPad M5 Pro",
   "duration": "20.5",
   "size": "15432000"
@@ -23,7 +24,8 @@ Target database: **Capture Inbox** — https://app.notion.com/p/be0733d869a0443d
 
 | Field | Required | Notes |
 |---|---|---|
-| `captureId` | yes | Doubles as the idempotency key. A `YYYYMMDD-HHMM` prefix is parsed into **Captured At**. |
+| `captureId` | yes | Doubles as the idempotency key. A `YYYYMMDD-HHMM` or ISO-8601 prefix is parsed into **Captured At**. |
+| `capturedAt` | no | ISO 8601. Overrides the `captureId` prefix, and is the only date the *update* path honors. |
 | `title` | no | Falls back to the transcript's first sentence. Truncated to 200 chars. |
 | `transcript` | no | Written to the page body, chunked into ≤1900-char paragraph blocks. |
 | `device` | no | New devices become new select options automatically. |
@@ -54,10 +56,14 @@ At least one of `title` or `transcript` must be present.
 Pointing this at a different database means editing one field: `notionDatabaseId` in the
 **Config** node. Nothing else references the ID.
 
+`captureTimeZone` lives in the same node (default `America/Chicago`). It is the zone applied
+to any datetime that arrives without a UTC offset — see *Time zones* below.
+
 ## The Shortcut side
 
 1. Record / pick the video → **Transcribe** (or Whisper via an API step).
 2. **Text** action, `Capture ID`: `[Current Date, formatted yyyyMMdd-HHmm]__[random suffix]`.
+   An ISO-8601 stamp works too — both shapes are parsed into **Captured At**.
 3. **Dictionary** action with the six keys above.
 4. **Get Contents of URL** → Method `POST`, Request Body `JSON`, body = the dictionary.
 5. Optional: **Get Dictionary Value** `pageUrl` from the response → **Open URL**, so the page
@@ -65,6 +71,27 @@ Pointing this at a different database means editing one field: `notionDatabaseId
 
 Keep the `captureId` stable across retries — that is what makes a flaky-signal re-send land as
 `duplicate` instead of a second row.
+
+## Time zones
+
+Notion reads a datetime with no UTC offset as UTC, then renders it in the viewer's zone. A
+Central capture sent as `2026-09-20T21:40:00` therefore lands on the page as 4:40 PM — five
+hours early. *Normalize Capture* stamps an explicit offset onto every datetime before it goes
+out, so this cannot happen:
+
+| Input | Sent to Notion |
+|---|---|
+| `2026-09-20T21:40:00` | `2026-09-20T21:40:00-05:00` (offset from `captureTimeZone`) |
+| `2026-09-20T21:40:00-05:00` | unchanged — a caller-supplied offset always wins |
+| `2026-01-15T21:40:00` | `2026-01-15T21:40:00-06:00` — the offset is computed per instant, so DST is handled |
+| `2026-09-20` | unchanged — Notion stores date-only values without a time |
+| anything else | 400 `invalid`, rather than a silently wrong date |
+
+The cleanest setup sends the offset from the device: add `capturedAt` to the Shortcut's
+Dictionary with the `Date Created` chip formatted `yyyy-MM-dd'T'HH:mm:ssxxx`. The `xxx` is what
+emits `-05:00`, and it follows you across time zones the way `captureTimeZone` cannot.
+
+Background: [`docs/captured-at-timezone-audit.md`](docs/captured-at-timezone-audit.md).
 
 ## Design notes
 
