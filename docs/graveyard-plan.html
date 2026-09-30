@@ -1,0 +1,351 @@
+<title>The Graveyard Content Plan</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Permanent+Marker&family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@500&display=swap">
+<style>
+/* Layout: one narrow reading column on a "whiteboard" (light) / "chalkboard" (dark). Marker face only for headings; red marker marks the pain, blue marks the fix. */
+:root {
+  --bg: #F6F7F5;
+  --panel: #FFFFFF;
+  --ink: #17191C;
+  --muted: #5A6068;
+  --line: #D6D9DC;
+  --red: #C0321E;
+  --blue: #1E4FA0;
+  --red-wash: #FBEAE6;
+  --font-marker: "Permanent Marker", "Comic Sans MS", "Segoe Print", cursive;
+  --font-body: "IBM Plex Sans", system-ui, -apple-system, "Segoe UI", sans-serif;
+  --font-mono: "IBM Plex Mono", ui-monospace, "SFMono-Regular", Menlo, monospace;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #1B2220; --panel: #222A28; --ink: #ECEEE8; --muted: #A2AAA5; --line: #36423E;
+    --red: #F1806A; --blue: #92B6F2; --red-wash: #3A2622; color-scheme: dark;
+  }
+}
+:root[data-theme="dark"] {
+  --bg: #1B2220; --panel: #222A28; --ink: #ECEEE8; --muted: #A2AAA5; --line: #36423E;
+  --red: #F1806A; --blue: #92B6F2; --red-wash: #3A2622; color-scheme: dark;
+}
+
+* { box-sizing: border-box; }
+body {
+  background: var(--bg); color: var(--ink);
+  font-family: var(--font-body); font-size: 16px; line-height: 1.6;
+  padding: 0 16px;
+}
+.wrap { max-width: 760px; margin: 0 auto; padding-block: 48px 72px; display: grid; gap: 56px; }
+h1, h2, h3 { text-wrap: balance; margin: 0; }
+h2 { font-family: var(--font-marker); font-weight: 400; font-size: 1.9rem; line-height: 1.2; }
+h3 { font-size: 1.02rem; font-weight: 600; }
+p { margin: 0; }
+.eyebrow {
+  font-family: var(--font-mono); font-size: .74rem; letter-spacing: .12em;
+  text-transform: uppercase; color: var(--muted);
+}
+section { display: grid; gap: 20px; }
+.lede { color: var(--muted); max-width: 62ch; }
+
+/* Header */
+header { display: grid; gap: 14px; }
+header h1 { font-family: var(--font-marker); font-weight: 400; font-size: clamp(2.4rem, 7vw, 3.6rem); line-height: 1.05; }
+.rant {
+  font-size: 1.15rem; max-width: 60ch;
+  border-left: 3px solid var(--red); padding-left: 14px;
+}
+.codes { display: flex; flex-wrap: wrap; gap: 18px 28px; margin-top: 6px; }
+.code { display: flex; align-items: center; gap: 10px; font-size: .9rem; color: var(--muted); }
+.code svg { width: 34px; height: 34px; flex: none; }
+.code svg * { fill: none; stroke: var(--ink); stroke-width: 2.4; stroke-linecap: round; stroke-linejoin: round; }
+
+/* Fix-first callout */
+.fix {
+  background: var(--red-wash); border: 1.5px solid var(--red); border-radius: 6px;
+  padding: 20px 22px; display: grid; gap: 12px;
+}
+.fix h2 { font-size: 1.4rem; color: var(--red); }
+.fix ol { margin: 0; padding-left: 1.2em; display: grid; gap: 8px; }
+
+/* Principles */
+.principles { display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 1px; background: var(--line); border: 1px solid var(--line); }
+.principle { background: var(--panel); padding: 18px 20px; display: grid; gap: 6px; align-content: start; min-width: 0; }
+.principle p { color: var(--muted); font-size: .94rem; }
+.principle .apply { color: var(--ink); font-size: .94rem; }
+.apply b { color: var(--blue); font-weight: 600; }
+
+/* 6 beats */
+.beats { display: flex; flex-wrap: wrap; gap: 8px; list-style: none; padding: 0; margin: 0; counter-reset: beat; }
+.beats li {
+  counter-increment: beat; font-weight: 600; font-size: .92rem;
+  border: 1.5px solid var(--ink); border-radius: 999px; padding: 4px 14px 4px 10px;
+  display: flex; align-items: center; gap: 8px;
+}
+.beats li::before { content: counter(beat); font-family: var(--font-mono); font-size: .75rem; color: var(--muted); }
+.beats li.pain { border-color: var(--red); color: var(--red); }
+.beats li.fixb { border-color: var(--blue); color: var(--blue); }
+
+/* Timeline */
+.timeline { list-style: none; margin: 0; padding: 0; display: grid; }
+.hour {
+  display: grid; grid-template-columns: 112px 1fr; gap: 20px;
+  padding: 18px 0; border-top: 1px solid var(--line);
+}
+.hour:last-child { border-bottom: 1px solid var(--line); }
+.time { font-family: var(--font-mono); font-size: .8rem; color: var(--muted); font-variant-numeric: tabular-nums; padding-top: 2px; }
+.time strong { display: block; font-family: var(--font-marker); font-weight: 400; font-size: 1.5rem; color: var(--ink); line-height: 1.1; }
+.hour-body { display: grid; gap: 6px; min-width: 0; }
+.hour-body ul { margin: 0; padding-left: 1.1em; color: var(--muted); font-size: .95rem; display: grid; gap: 2px; }
+.out { font-family: var(--font-mono); font-size: .76rem; color: var(--blue); }
+
+/* Story template */
+.story { list-style: none; margin: 0; padding: 0; display: grid; gap: 14px; counter-reset: s; }
+.story li { display: grid; grid-template-columns: 120px 1fr; gap: 16px; align-items: start; }
+.story .label { font-family: var(--font-mono); font-size: .76rem; letter-spacing: .08em; text-transform: uppercase; padding-top: 4px; color: var(--muted); }
+.story .label.pain { color: var(--red); }
+.story .label.fixl { color: var(--blue); }
+.story blockquote { margin: 0; font-size: 1.02rem; min-width: 0; }
+.chip {
+  display: inline-block; font-family: var(--font-mono); font-size: .68rem; letter-spacing: .06em;
+  text-transform: uppercase; border: 1px solid var(--red); color: var(--red);
+  border-radius: 3px; padding: 0 6px; margin-left: 6px; vertical-align: 2px; white-space: nowrap;
+}
+.chip.tpl { border-color: var(--blue); color: var(--blue); }
+
+/* Rules */
+.rules { display: grid; gap: 16px; }
+.rule { display: grid; grid-template-columns: 40px 1fr; gap: 14px; align-items: start; }
+.rule svg { width: 40px; height: 40px; }
+.rule svg * { fill: none; stroke: var(--ink); stroke-width: 2.4; stroke-linecap: round; stroke-linejoin: round; }
+.rule p { color: var(--muted); font-size: .95rem; }
+
+footer { color: var(--muted); font-size: .85rem; border-top: 1px solid var(--line); padding-top: 16px; }
+
+@media (max-width: 560px) {
+  .hour, .story li { grid-template-columns: 1fr; gap: 6px; }
+  .time strong { display: inline; margin-right: 8px; }
+}
+</style>
+
+<div class="wrap">
+
+  <header>
+    <span class="eyebrow">Revenant Media · Marketing &amp; batch-recording plan</span>
+    <h1>The Graveyard</h1>
+    <p class="rant">Slow response times and no follow-up are killing contractors' businesses. The jobs they already paid to get are sitting dead in their estimate folders.</p>
+    <div class="codes" aria-label="Visual house codes">
+      <span class="code">
+        <svg viewBox="0 0 34 34" aria-hidden="true"><path d="M8 31V13a9 9 0 0 1 18 0v18"/><path d="M4 31h26"/><path d="M17 13v10M13 17h8"/></svg>
+        Tombstones
+      </span>
+      <span class="code">
+        <svg viewBox="0 0 34 34" aria-hidden="true"><path d="M7 7v20M13 7v20M19 7v20M25 7v20"/><path d="M3 22l28-10"/></svg>
+        Tally marks
+      </span>
+      <span class="code">
+        <svg viewBox="0 0 34 34" aria-hidden="true"><circle cx="17" cy="17" r="13"/><path d="M17 9v8l6 4"/></svg>
+        The clock
+      </span>
+      <span class="code">
+        <svg viewBox="0 0 34 34" aria-hidden="true"><circle cx="17" cy="17" r="5"/><path d="M17 3v5M17 26v5M3 17h5M26 17h5M7 7l3.5 3.5M23.5 23.5L27 27M27 7l-3.5 3.5M10.5 23.5L7 27"/></svg>
+        The gear
+      </span>
+    </div>
+  </header>
+
+  <aside class="fix" aria-labelledby="fix-h">
+    <h2 id="fix-h">Fix before you film</h2>
+    <ol>
+      <li><b>Source every stat.</b> The 42 hours, 78%, 80% drop, $25,000 and $76,500 figures need a citation you can put on screen. If you can't find a source, cut the number.</li>
+      <li><b>Only real results count as proof.</b> "312 estimates, $54,000 recovered" and "I audited a 3-truck roofer in Tyler" are placeholders until a real client produces them. Presenting made-up results as real breaks FTC endorsement rules and destroys trust if someone checks.</li>
+      <li><b>Match the offer to the stack plan.</b> Hour 5 pitches "$0 upfront, 12% of closed jobs." STACK.md Revision 2 uses a small setup fee plus a percentage. Pick one before recording the Package clips.</li>
+    </ol>
+  </aside>
+
+  <section aria-labelledby="s1">
+    <span class="eyebrow">Section 1</span>
+    <h2 id="s1">Branding strategy</h2>
+    <p class="lede">We're building a brand that people live inside, not just a reactivation service. Each principle below has the specific move it becomes for The Graveyard.</p>
+    <div class="principles">
+      <div class="principle">
+        <h3>Build an ecosystem</h3>
+        <p>A brand is an ongoing exchange of energy with the consumer, not a one-off product.</p>
+        <p class="apply"><b>Graveyard:</b> content, door knocks and campaigns all feed the same story.</p>
+      </div>
+      <div class="principle">
+        <h3>Establish the room</h3>
+        <p>The everyday setting your brand keeps coming back to.</p>
+        <p class="apply"><b>Graveyard:</b> the stark black-and-white whiteboard.</p>
+      </div>
+      <div class="principle">
+        <h3>Social house codes</h3>
+        <p>Rules that make the content recognizable without a logo.</p>
+        <p class="apply"><b>Graveyard:</b> hand-drawn tombstones, tally marks, the clock, the gear.</p>
+      </div>
+      <div class="principle">
+        <h3>One core rant</h3>
+        <p>A single argument you can make forever.</p>
+        <p class="apply"><b>Graveyard:</b> slow response and no follow-up are killing the business.</p>
+      </div>
+      <div class="principle">
+        <h3>Trigger cortisol</h3>
+        <p>Make the viewer feel exactly where they stand and that they're falling behind.</p>
+        <p class="apply"><b>Graveyard:</b> put a dollar figure on the estimate folder.</p>
+      </div>
+      <div class="principle">
+        <h3>Shift the identity</h3>
+        <p>Answer one core question and move the viewer into a new identity.</p>
+        <p class="apply"><b>Graveyard:</b> from "contractor losing jobs" to "owner who works every lead."</p>
+      </div>
+      <div class="principle">
+        <h3>Lock in emotionally</h3>
+        <p>People buy on emotion first, so anchor every piece in one feeling or daydream.</p>
+        <p class="apply"><b>Graveyard:</b> the relief of money coming back without new ad spend.</p>
+      </div>
+      <div class="principle">
+        <h3>Build backwards</h3>
+        <p>Start from the content and the consumer's world, then shape the product around it.</p>
+        <p class="apply"><b>Graveyard:</b> the content strategy leads, and the offer follows.</p>
+      </div>
+    </div>
+  </section>
+
+  <section aria-labelledby="s2">
+    <span class="eyebrow">Section 2</span>
+    <h2 id="s2">The daily 6-hour batch</h2>
+    <p class="lede">Record every whiteboard video in one 6-hour block, one piece at a time. Batching keeps the room looking identical, and the pieces get assembled in editing. Every script follows the same six beats:</p>
+    <ol class="beats" aria-label="Six-beat script framework">
+      <li class="pain">Pinch</li>
+      <li class="pain">Agitate</li>
+      <li class="fixb">Reframe</li>
+      <li class="fixb">Solve</li>
+      <li>Proof</li>
+      <li>Package</li>
+    </ol>
+    <ol class="timeline">
+      <li class="hour">
+        <div class="time"><strong>Hour 1</strong>0:00–1:00</div>
+        <div class="hour-body">
+          <h3>Setup and strategy review</h3>
+          <ul>
+            <li>Set up the whiteboard, camera, lighting and markers.</li>
+            <li>Review the target pain points and script the six beats.</li>
+          </ul>
+          <span class="out">Output: day's scripts</span>
+        </div>
+      </li>
+      <li class="hour">
+        <div class="time"><strong>Hour 2</strong>1:00–2:00</div>
+        <div class="hour-body">
+          <h3>Cortisol triggers and stat hits</h3>
+          <ul>
+            <li>Record 10–15 short "Stat Hits," 30–45 seconds each.</li>
+            <li>Pinch only: use data to show they're losing money slowly.</li>
+          </ul>
+          <span class="out">Output: 10–15 shorts</span>
+        </div>
+      </li>
+      <li class="hour">
+        <div class="time"><strong>Hour 3</strong>2:00–3:00</div>
+        <div class="hour-body">
+          <h3>Story hooks</h3>
+          <ul>
+            <li>Film the openings for the Breakdown videos.</li>
+            <li>Record several versions of a contractor story (e.g. "Last week, I audited a 3-truck roofer in Tyler…"). Use real audits only.</li>
+          </ul>
+          <span class="out">Output: hook variants</span>
+        </div>
+      </li>
+      <li class="hour">
+        <div class="time"><strong>Hour 4</strong>3:00–4:00</div>
+        <div class="hour-body">
+          <h3>Whiteboard solves</h3>
+          <ul>
+            <li>Film the Reframe and Solve beats.</li>
+            <li>Draw the flowcharts, the gear (the system) and the tally marks (jobs recovered). Show the owner's transformation live on the board.</li>
+          </ul>
+          <span class="out">Output: solve segments</span>
+        </div>
+      </li>
+      <li class="hour">
+        <div class="time"><strong>Hour 5</strong>4:00–5:00</div>
+        <div class="hour-body">
+          <h3>Proof and package</h3>
+          <ul>
+            <li>Record the closing offers and case studies.</li>
+            <li>Pitch the Graveyard Sprint (offer terms to be confirmed; see "Fix before you film").</li>
+          </ul>
+          <span class="out">Output: closers + case studies</span>
+        </div>
+      </li>
+      <li class="hour">
+        <div class="time"><strong>Hour 6</strong>5:00–6:00</div>
+        <div class="hour-body">
+          <h3>Signature B-roll and door knocks</h3>
+          <ul>
+            <li>Film the signature hand-knocking B-roll, with no face shown.</li>
+            <li>Record the "Three Questions" door-knock framework as the visual hook for outreach content.</li>
+          </ul>
+          <span class="out">Output: B-roll library</span>
+        </div>
+      </li>
+    </ol>
+  </section>
+
+  <section aria-labelledby="s3">
+    <span class="eyebrow">Section 3</span>
+    <h2 id="s3">Story-driven content framework</h2>
+    <p class="lede">Every video tells the story of helping one contractor, backed by hard data and a real pain point.</p>
+    <ol class="story">
+      <li>
+        <span class="label">The story</span>
+        <blockquote>"I sat down with a roofing owner in East Texas who swore his leads were just bad. I asked to see his estimate folder." <span class="chip tpl">Template</span></blockquote>
+      </li>
+      <li>
+        <span class="label">The data</span>
+        <blockquote>"The average roofer takes 42 hours to respond to a new lead. But 78% of customers choose the first contractor who responds." <span class="chip">Source needed</span></blockquote>
+      </li>
+      <li>
+        <span class="label pain">The pain</span>
+        <blockquote>"After 5 minutes, conversion drops 80%. By the time he was calling people back, his next $25,000 roof was already gone." <span class="chip">Source needed</span></blockquote>
+      </li>
+      <li>
+        <span class="label pain">The cost</span>
+        <blockquote>"Responding in 4 hours instead of 5 minutes costs roughly $76,500 a month. That's an estimate graveyard." <span class="chip">Source needed</span></blockquote>
+      </li>
+      <li>
+        <span class="label fixl">The solve</span>
+        <blockquote>"I pulled 312 of his dead estimates. We ran a 3-step email reactivation sequence. He didn't need to spend another dime on marketing. He needed a shovel, and we dug up $54,000." <span class="chip tpl">Replace with real results</span></blockquote>
+      </li>
+    </ol>
+  </section>
+
+  <section aria-labelledby="s4">
+    <span class="eyebrow">Section 4</span>
+    <h2 id="s4">Execution rules</h2>
+    <div class="rules">
+      <div class="rule">
+        <svg viewBox="0 0 40 40" aria-hidden="true"><rect x="4" y="7" width="32" height="22" rx="1"/><path d="M13 35l7-6 7 6"/><path d="M10 15h12M10 21h18"/></svg>
+        <div>
+          <h3>Never leave the room</h3>
+          <p>Every video is shot in the same place. No car, no desk. Stay at the whiteboard.</p>
+        </div>
+      </div>
+      <div class="rule">
+        <svg viewBox="0 0 40 40" aria-hidden="true"><path d="M8 8v24M15 8v24M22 8v24M29 8v24"/><path d="M4 26l32-12"/></svg>
+        <div>
+          <h3>Consistency beats talent</h3>
+          <p>Steady flow and a steady story outperform raw talent or a single viral hit. Stick to the posting schedule.</p>
+        </div>
+      </div>
+      <div class="rule">
+        <svg viewBox="0 0 40 40" aria-hidden="true"><circle cx="20" cy="20" r="15"/><path d="M20 11v9l6 4"/></svg>
+        <div>
+          <h3>Control the consumer's journey</h3>
+          <p>Show the daily habits you want contractors to adopt, not just the product, so the brand becomes part of their day.</p>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <footer>Revenant Media · The Graveyard · Pairs with STACK.md (Revision 2) in the ghl-a2p repo.</footer>
+</div>
